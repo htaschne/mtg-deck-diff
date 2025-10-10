@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+/* Tell Tailwind v4 where to scan for classes */
+@source "./index.html" "./src/**/*.{js,jsx,ts,tsx}";
+
+html,
+body,
+#root {
+    height: 100%;
+}
