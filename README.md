@@ -7,5 +7,5 @@
 A tool to help commanders find the differences between two lists!
 
 <p align="center">
-  <img src="public/diff.png" alt="MTG Deck Diff Demo" width="300" />
+  <img src="public/diff.png" alt="MTG Deck Diff Demo" width="1000" />
 </p>
