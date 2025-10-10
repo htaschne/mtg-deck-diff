@@ -1,6 +1,19 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 
 // --- Utilities --------------------------------------------------------------
+// Normalize multi-face separators and spacing for card names
+const normalizeName = (raw) => {
+  if (!raw) return raw;
+  let s = raw.trim();
+  // Collapse 3+ slashes to two (some exports use '///')
+  s = s.replace(/\/{3,}/g, "//");
+  // Ensure single spaces around double-slash separators
+  s = s.replace(/\s*\/\/\s*/g, " // ");
+  // Collapse multiple spaces
+  s = s.replace(/\s{2,}/g, " ");
+  return s.trim();
+};
+
 const parseDeckText = (text) => {
   // Supports lines like: "3 Lightning Bolt", "1x Island"
   // Skips everything after a line starting with "Sideboard" (Arena export)
@@ -29,6 +42,13 @@ const parseDeckText = (text) => {
 
     // Remove set/code in brackets like "[MOM]" or trailing comments
     name = name.replace(/\s*\[[^\]]+\]\s*$/, "");
+    // Remove trailing parenthetical set codes and optional collector numbers, e.g. "(M11) 150" or "(151/280)"
+    name = name.replace(/\s*\([^)]*\)\s*[\d/]*\s*$/, "");
+    // Remove stray trailing collector numbers if any remain (e.g., "Lightning Bolt 150")
+    name = name.replace(/\s+\d+\s*$/, "");
+
+    // Normalize multi-face separators (e.g., '///' -> ' // ')
+    name = normalizeName(name);
 
     // Collapse basic lands variants just by name (already the case)
     const prev = map.get(name) || 0;
@@ -49,7 +69,7 @@ const batch = (arr, size = 75) => {
   return out;
 };
 
-const CARD_CACHE_KEY = "mtg_deck_diff_cache_v1";
+const CARD_CACHE_KEY = "mtg_deck_diff_cache_v2"; // bump to invalidate old entries without back face URLs
 const loadCache = () => {
   try {
     const raw = localStorage.getItem(CARD_CACHE_KEY);
@@ -65,12 +85,25 @@ const saveCache = (obj) => {
   } catch { }
 };
 
-// pick front face and a few useful fields; prefer English printing
 const normalizeCard = (c) => {
-  const front = c.card_faces?.[0] || c;
-  const imageUris = front.image_uris || c.image_uris || {};
-  const art = imageUris.art_crop || imageUris.normal || imageUris.large || imageUris.small;
-  const small = imageUris.small || imageUris.normal || imageUris.png || art;
+  const faces = Array.isArray(c.card_faces) ? c.card_faces : null;
+  const front = faces?.[0] || c;
+  const back = faces?.[1] || null;
+
+  const pick = (obj, pref = "big") => {
+    const u = obj?.image_uris || {};
+    if (pref === "big") return u.png || u.large || u.normal || u.small || null;
+    if (pref === "small") return u.small || u.normal || u.large || u.png || null;
+    if (pref === "art") return u.art_crop || u.normal || u.large || u.small || null;
+    return null;
+  };
+
+  // Always prefer face-level images for DFCs
+  const art = pick(front, "art") || pick(c, "art");
+  const small = pick(front, "small") || pick(c, "small");
+  const frontBig = pick(front, "big") || pick(c, "big");
+  const backBig = back ? pick(back, "big") : null;
+
   return {
     id: c.id,
     name: c.name,
@@ -81,7 +114,8 @@ const normalizeCard = (c) => {
     color_identity: c.color_identity || [],
     art,
     small,
-    png: imageUris.png || null,
+    png: frontBig,
+    back_png: backBig,
     scryfall_uri: c.scryfall_uri,
     set_name: c.set_name,
   };
@@ -101,15 +135,79 @@ const fetchCardsByNames = async (names, cache) => {
       body: JSON.stringify(body),
     });
     const json = await res.json();
+    if (!res.ok) {
+      console.error("Scryfall collection fetch failed", res.status, json);
+    }
     const notFound = new Set((json.not_found || []).map((i) => i.name?.toLowerCase()));
-    for (const c of json.data || []) {
+
+    // Index received cards by canonical name and by front-face name (case-insensitive)
+    const received = json.data || [];
+    const byCanonical = new Map();
+    const byFront = new Map();
+    for (const c of received) {
+      const canon = (c.name || "").toLowerCase();
+      if (canon) byCanonical.set(canon, c);
+      const face0 = (c.card_faces?.[0]?.name || "").toLowerCase();
+      if (face0) byFront.set(face0, c);
+      // Always cache under canonical name
       const card = normalizeCard(c);
       cache[card.name] = { card, ts: Date.now() };
     }
-    // mark not found to avoid repeated refetch this session
-    for (const name of chunk) {
-      if (!cache[name] && notFound.has(name.toLowerCase())) {
-        cache[name] = { card: null, ts: Date.now() };
+
+    // For each requested name in this chunk, if it's not in cache yet but was resolved
+    // in the collection response, map it to either canonical or front-face match.
+    for (const origName of chunk) {
+      if (cache[origName]) continue;
+      const q = normalizeName(origName).toLowerCase();
+      let c = byCanonical.get(q);
+      if (!c) c = byFront.get(q);
+      if (c) {
+        const card = normalizeCard(c);
+        cache[origName] = { card, ts: Date.now() };
+      }
+    }
+
+    // Fallback for unresolved names: try multiple variants and endpoints
+    for (const origName of chunk) {
+      if (cache[origName]) continue; // already resolved above
+      if (!notFound.has(origName.toLowerCase())) continue;
+
+      const variants = [];
+      const full = normalizeName(origName);
+      const parts = full.split("//");
+      const frontOnly = parts[0]?.trim();
+
+      // Try exact then fuzzy on full, then exact then fuzzy on front-only (if present)
+      variants.push({ kind: "exact", q: full });
+      variants.push({ kind: "fuzzy", q: full });
+      if (frontOnly && frontOnly.length > 0) {
+        variants.push({ kind: "exact", q: frontOnly });
+        variants.push({ kind: "fuzzy", q: frontOnly });
+      }
+
+      let resolved = false;
+      for (const v of variants) {
+        const url = v.kind === "exact"
+          ? `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(v.q)}`
+          : `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(v.q)}`;
+        try {
+          const r = await fetch(url);
+          if (r.ok) {
+            const c = await r.json();
+            const card = normalizeCard(c);
+            cache[origName] = { card, ts: Date.now() };
+            resolved = true;
+            break;
+          }
+        } catch (e) {
+          console.error("Scryfall named lookup failed for", v.kind, v.q, e);
+        }
+      }
+
+      // if still unresolved, mark as not found to avoid loops
+      if (!resolved && !cache[origName]) {
+        console.warn("Unresolved card name after fallbacks:", origName);
+        cache[origName] = { card: null, ts: Date.now() };
       }
     }
   }
@@ -246,7 +344,9 @@ const CardRow = ({ deckLabel, name, qty, qa, qb, getCard, side }) => {
               className="h-12 w-9 rounded-md object-cover ring-1 ring-white/10"
             />
           ) : (
-            <div className="h-12 w-9 rounded-md bg-black/30 ring-1 ring-white/10" />
+            <div className="h-12 w-9 rounded-md bg-black/30 ring-1 ring-white/10 flex items-center justify-center text-[10px] leading-tight text-white/60">
+              N/A
+            </div>
           )}
 
           {/* Quantity + Header */}
@@ -284,14 +384,30 @@ const CardRow = ({ deckLabel, name, qty, qa, qb, getCard, side }) => {
         {/* Mobile modal */}
         {showModal && card?.png && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setShowModal(false)}>
-            <img src={card.png} alt={name} className="max-h-full rounded-xl" />
+            {card.back_png ? (
+              <div className="flex gap-2">
+                <img src={card.png} alt={`${name} (front)`} className="max-h-full rounded-xl" />
+                <img src={card.back_png} alt={`${name} (back)`} className="max-h-full rounded-xl" />
+              </div>
+            ) : (
+              <img src={card.png} alt={name} className="max-h-full rounded-xl" />
+            )}
           </div>
         )}
       </div>
       {/* Desktop hover preview (absolute, not clipped) */}
       {card?.png && (
-        <div className="pointer-events-none absolute top-2 right-2 z-50 hidden md:group-hover:block rounded-xl border border-white/10 shadow-2xl">
-          <img src={card.png} alt={name} className="h-80 rounded-xl" />
+        <div className="pointer-events-none absolute top-2 right-2 z-50 hidden md:group-hover:block">
+          {card.back_png ? (
+            <div className="flex gap-2 rounded-xl border border-white/10 bg-black/20 p-2 shadow-2xl">
+              <img src={card.png} alt={`${name} (front)`} className="h-80 rounded-lg" />
+              <img src={card.back_png} alt={`${name} (back)`} className="h-80 rounded-lg" />
+            </div>
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-black/20 p-2 shadow-2xl">
+              <img src={card.png} alt={name} className="h-80 rounded-lg" />
+            </div>
+          )}
         </div>
       )}
     </div>
