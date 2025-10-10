@@ -413,7 +413,7 @@ export default function App() {
         {/* Summary bar */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
           <div className="rounded-xl border border-white/10 bg-gray-800 p-3 text-center">
-            <div className="text-xs uppercase opacity-80">Equal Qty</div>
+            <div className="text-xs uppercase opacity-80">Equal Quantity</div>
             <div className="text-xl font-bold">{equalCount}</div>
           </div>
           <div className="rounded-xl border border-white/10 bg-red-800 p-3 text-center">
@@ -425,7 +425,7 @@ export default function App() {
             <div className="text-xl font-bold">{onlyB}</div>
           </div>
           <div className="rounded-xl border border-white/10 bg-yellow-700 p-3 text-center">
-            <div className="text-xs uppercase opacity-80">Different Qty</div>
+            <div className="text-xs uppercase opacity-80">Different Quantity</div>
             <div className="text-xl font-bold">{diffs}</div>
           </div>
         </div>

@@ -1,16 +1,42 @@
-# React + Vite
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
-Currently, two official plugins are available:
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+<p align="center">
+  <img src="public/logo.png" alt="MTG Deck Diff Logo" width="128" />
+</p>
 
-## React Compiler
+# MTG Deck Diff
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+A single-page web app to compare two Magic: The Gathering decks.
 
-## Expanding the ESLint configuration
+Paste or load two deck `.txt` files, and it will:
+- Sort cards by name.
+- Fetch card thumbnails and stats from Scryfall.
+- Show color-coded differences:
+  - 🟥 Red — only in Deck A
+  - 🟩 Green — only in Deck B
+  - 🟨 Yellow — different quantities
+  - ⚫ Gray — same in both decks
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Tech stack
+- [React](https://react.dev/)
+- [Vite](https://vitejs.dev/)
+- [Tailwind CSS](https://tailwindcss.com/)
+- [Scryfall API](https://scryfall.com/docs/api)
+
+### Development
+```bash
+npm install
+npm run dev
+```
+
+### Build
+```bash
+npm run build
+```
+
+### Deploy
+This project is ready to be deployed to GitHub Pages or any static host.
+```bash
+npm run deploy
+```
