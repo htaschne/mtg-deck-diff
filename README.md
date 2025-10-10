@@ -1,8 +1,5 @@
-
-
-
 <p align="center">
-  <img src="public/logo.png" alt="MTG Deck Diff Logo" width="128" />
+  <img src="public/logo.png" alt="MTG Deck Diff Logo" width="300" />
 </p>
 
 # MTG Deck Diff
@@ -17,26 +14,3 @@ Paste or load two deck `.txt` files, and it will:
   - 🟩 Green — only in Deck B
   - 🟨 Yellow — different quantities
   - ⚫ Gray — same in both decks
-
-### Tech stack
-- [React](https://react.dev/)
-- [Vite](https://vitejs.dev/)
-- [Tailwind CSS](https://tailwindcss.com/)
-- [Scryfall API](https://scryfall.com/docs/api)
-
-### Development
-```bash
-npm install
-npm run dev
-```
-
-### Build
-```bash
-npm run build
-```
-
-### Deploy
-This project is ready to be deployed to GitHub Pages or any static host.
-```bash
-npm run deploy
-```
