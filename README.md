@@ -4,13 +4,8 @@
 
 # MTG Deck Diff
 
-A single-page web app to compare two Magic: The Gathering decks.
+A tool to help commanders find the differences between two lists!
 
-Paste or load two deck `.txt` files, and it will:
-- Sort cards by name.
-- Fetch card thumbnails and stats from Scryfall.
-- Show color-coded differences:
-  - 🟥 Red — only in Deck A
-  - 🟩 Green — only in Deck B
-  - 🟨 Yellow — different quantities
-  - ⚫ Gray — same in both decks
+<p align="center">
+  <img src="public/diff.png" alt="MTG Deck Diff Demo" width="300" />
+</p>
