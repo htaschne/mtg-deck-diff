@@ -180,6 +180,38 @@ const useHoverIntent = () => {
   };
 };
 
+// --- Mana Cost Rendering ----------------------------------------------------
+const normalizeManaToken = (tok) => {
+  // tok like "{1}", "{W}", "{W/U}", "{W/P}", "{2/U}", "{C}", "{S}", "{X}"
+  const inner = tok.replace(/[{}]/g, "").toUpperCase();
+  // Remove slashes for hybrid/phyrexian to match Scryfall SVG filenames (e.g., WU.svg, WP.svg, 2U.svg)
+  return inner.replaceAll("/", "");
+};
+
+const ManaCost = ({ cost, className = "h-4 w-4" }) => {
+  if (!cost) return null;
+  const tokens = cost.match(/\{[^}]+\}/g) || [];
+  if (tokens.length === 0) return null;
+  return (
+    <span className="inline-flex items-center gap-1 align-middle">
+      {tokens.map((t, i) => {
+        const code = normalizeManaToken(t);
+        const src = `https://svgs.scryfall.io/card-symbols/${code}.svg`;
+        return (
+          <img
+            key={`${code}-${i}`}
+            src={src}
+            alt={t}
+            title={t}
+            className={`${className} inline-block`}
+            loading="lazy"
+          />
+        );
+      })}
+    </span>
+  );
+};
+
 const CardRow = ({ deckLabel, name, qty, qa, qb, getCard, side }) => {
   const card = getCard(name);
   const status = computeStatus(qa, qb);
@@ -225,9 +257,9 @@ const CardRow = ({ deckLabel, name, qty, qa, qb, getCard, side }) => {
                 <span title={name}>{name}</span>
               </div>
               <div className="ml-2 flex items-center">
-                {/* Mana cost string (simple text from Scryfall) */}
+                {/* Mana cost string (rendered as mana symbols) */}
                 {card?.mana_cost && (
-                  <span className="text-xs font-mono opacity-90">{card.mana_cost}</span>
+                  <ManaCost cost={card.mana_cost} />
                 )}
                 <DiffBadge qa={qa} qb={qb} />
               </div>
