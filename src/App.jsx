@@ -308,8 +308,8 @@ const DeckColumn = ({ title, deckMap, otherDeckMap, getCard, side }) => {
           deckLabel={title}
           name={name}
           qty={deckMap.get(name)}
-          qa={deckMap.get(name)}
-          qb={otherDeckMap.get(name)}
+          qa={side === "A" ? deckMap.get(name) : otherDeckMap.get(name)}
+          qb={side === "B" ? deckMap.get(name) : otherDeckMap.get(name)}
           getCard={getCard}
           side={side}
         />
