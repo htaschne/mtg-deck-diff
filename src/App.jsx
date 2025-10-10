@@ -318,18 +318,23 @@ const DeckColumn = ({ title, deckMap, otherDeckMap, getCard, side }) => {
   );
 };
 
-const FileOrPaste = ({ label, value, setValue, example }) => {
+const FileOrPaste = ({ label, value, setValue, example, onNameChange }) => {
   const fileInputRef = useRef(null);
+  const [fileName, setFileName] = useState("");
   const onFile = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     const text = await f.text();
+    setFileName(f.name || "");
+    if (onNameChange) onNameChange(f.name || "");
     setValue(text);
   };
   return (
     <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
       <div className="mb-2 flex items-center justify-between">
-        <div className="text-sm font-semibold opacity-90">{label}</div>
+        <div className="text-sm font-semibold opacity-90">
+          {fileName ? fileName : label}
+        </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => fileInputRef.current?.click()}
@@ -359,6 +364,8 @@ const FileOrPaste = ({ label, value, setValue, example }) => {
 export default function App() {
   const [deckAText, setDeckAText] = useState("");
   const [deckBText, setDeckBText] = useState("");
+  const [deckAName, setDeckAName] = useState("Deck A");
+  const [deckBName, setDeckBName] = useState("Deck B");
 
   const deckA = useMemo(() => parseDeckText(deckAText), [deckAText]);
   const deckB = useMemo(() => parseDeckText(deckBText), [deckBText]);
@@ -391,12 +398,14 @@ export default function App() {
             label="Deck A (First)"
             value={deckAText}
             setValue={setDeckAText}
+            onNameChange={setDeckAName}
             example={`Example:\n4 Lightning Bolt\n4 Goblin Guide\n2 Searing Blaze\n\nSideboard\n3 Smash to Smithereens`}
           />
           <FileOrPaste
             label="Deck B (Second)"
             value={deckBText}
             setValue={setDeckBText}
+            onNameChange={setDeckBName}
             example={`Example:\n4 Lightning Bolt\n3 Goblin Guide\n3 Monastery Swiftspear`}
           />
         </div>
@@ -424,9 +433,9 @@ export default function App() {
         {/* Columns */}
         <div className="grid gap-6 md:grid-cols-2">
           <section>
-            <h2 className="mb-2 text-sm font-semibold tracking-wide text-white/90">Deck A</h2>
+            <h2 className="mb-2 text-sm font-semibold tracking-wide text-white/90">{deckAName}</h2>
             <DeckColumn
-              title="Deck A"
+              title={deckAName}
               deckMap={deckA}
               otherDeckMap={deckB}
               getCard={get}
@@ -434,9 +443,9 @@ export default function App() {
             />
           </section>
           <section>
-            <h2 className="mb-2 text-sm font-semibold tracking-wide text-white/90">Deck B</h2>
+            <h2 className="mb-2 text-sm font-semibold tracking-wide text-white/90">{deckBName}</h2>
             <DeckColumn
-              title="Deck B"
+              title={deckBName}
               deckMap={deckB}
               otherDeckMap={deckA}
               getCard={get}
