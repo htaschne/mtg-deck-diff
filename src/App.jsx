@@ -255,15 +255,16 @@ const computeStatus = (qa, qb) => {
   return "equal";
 };
 
-const DiffBadge = ({ qa, qb }) => {
+const DiffBadge = ({ qa, qb, side }) => {
   if (qa == null || qb == null) return null;
-  const delta = qa - qb; // as requested: first deck minus second
-  if (delta === 0) return null;
-  const sign = delta > 0 ? "+" : "";
+  // Show delta relative to the current column: A shows (A - B), B shows (B - A)
+  const raw = side === "B" ? (qb - qa) : (qa - qb);
+  if (raw === 0) return null;
+  const sign = raw > 0 ? "+" : "";
   return (
     <span className="ml-2 rounded-full px-2 py-0.5 text-xs font-semibold bg-black/40">
       {sign}
-      {delta}
+      {raw}
     </span>
   );
 };
@@ -361,7 +362,7 @@ const CardRow = ({ deckLabel, name, qty, qa, qb, getCard, side }) => {
                 {card?.mana_cost && (
                   <ManaCost cost={card.mana_cost} />
                 )}
-                <DiffBadge qa={qa} qb={qb} />
+                <DiffBadge qa={qa} qb={qb} side={side} />
               </div>
             </div>
             {/* Type line */}
