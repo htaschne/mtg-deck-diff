@@ -775,12 +775,7 @@ const useScryfall = (names) => {
   return { get, loading };
 };
 
-const StatusColors = {
-  equal: "bg-gray-700",
-  onlyA: "bg-red-700",
-  onlyB: "bg-green-700",
-  diff: "bg-yellow-600",
-};
+// StatusColors is not used for card background color in DeckColumn; instead, see below for per-card row coloring
 
 const computeStatus = (qa, qb) => {
   if (qa && qb) {
@@ -848,19 +843,37 @@ const ManaCost = ({ cost, className = "h-4 w-4" }) => {
   );
 };
 
-const CardRow = ({ deckLabel, name, qty, qa, qb, getCard, side }) => {
+const CardRow = ({ deckLabel, name, qty, qa, qb, getCard, side, deckB }) => {
   const card = getCard(name);
   const status = computeStatus(qa, qb);
   const [showModal, setShowModal] = useState(false);
 
   const onClickMobile = () => setShowModal(true);
 
+  // Determine background color for card row
+  // Old logic:
+  // const bgColor =
+  //   inBothSameQty ? "bg-gray-700" :
+  //   onlyInB ? "bg-green-700" :
+  //   onlyInA ? "bg-red-700" :
+  //   diffQty ? "bg-yellow-700" : "bg-gray-800";
+  // New logic: only apply bg-red-700 for onlyInA if deckB is loaded
+  const inBothSameQty = qa && qb && qa === qb;
+  const onlyInB = !qa && qb;
+  const onlyInA = qa && !qb;
+  const diffQty = qa && qb && qa !== qb;
+  const bgColor =
+    inBothSameQty ? "bg-gray-700" :
+      onlyInB ? "bg-green-700" :
+        (deckB && deckB.size > 0 && onlyInA) ? "bg-red-700" :
+          diffQty ? "bg-yellow-700" : "bg-gray-800";
+
   return (
     <div
       className="group relative rounded-xl shadow-sm"
       role="listitem"
     >
-      <div className={`relative overflow-hidden rounded-xl border border-white/10 ${StatusColors[status]}`}>
+      <div className={`relative overflow-hidden rounded-xl border border-white/10 ${bgColor}`}>
         {/* Background art */}
         {card?.art && (
           <div
@@ -963,6 +976,7 @@ const DeckColumn = ({
   selectedForMerge = {},
   onCardClick = null,
   addCardToDeck, // for drag-and-drop
+  deckB, // pass deckB for merge overlay logic
 }) => {
   const names = useMemo(() => [...deckMap.keys()].sort((a, b) => a.localeCompare(b)), [deckMap]);
   // Drag-and-drop handlers
@@ -1006,7 +1020,10 @@ const DeckColumn = ({
         }
         // Visual highlight for eligible-for-merge cards
         const isEligible = showMerge && eligibleForMerge(name) && !selectedForMerge[name];
-        const rowOpacity = showMerge && eligibleForMerge(name) && selectedForMerge[name] ? "opacity-40 pointer-events-none" : "";
+        // Only apply opacity overlay if deckB is loaded
+        const rowOpacity = (deckB && deckB.size > 0 && showMerge && eligibleForMerge(name) && selectedForMerge[name])
+          ? "opacity-40 pointer-events-none"
+          : "";
         return (
           <div
             key={`${side}-${name}`}
@@ -1022,6 +1039,7 @@ const DeckColumn = ({
               qb={side === "B" ? deckMap.get(name) : otherDeckMap.get(name)}
               getCard={getCard}
               side={side}
+              deckB={deckB}
             />
           </div>
         );
@@ -1348,20 +1366,27 @@ export default function App() {
 
         {/* Summary bar */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
+          {/* "Only in A" box: always show if Deck A is loaded; border only if Deck B is loaded */}
+          {deckA.size > 0 && (
+            <div
+              className={`rounded-xl ${deckB.size > 0 ? 'border border-white/10' : ''} bg-red-800 p-3 text-center`}
+            >
+              <div className="text-xs uppercase opacity-80">Only in A</div>
+              <div className="text-xl font-bold">{onlyA}</div>
+            </div>
+          )}
           {(deckA.size > 0 && deckB.size > 0) && (
             <>
               <div className="rounded-xl border border-white/10 bg-gray-800 p-3 text-center">
                 <div className="text-xs uppercase opacity-80">Equal Quantity</div>
                 <div className="text-xl font-bold">{equalCount}</div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-red-800 p-3 text-center">
-                <div className="text-xs uppercase opacity-80">Only in A</div>
-                <div className="text-xl font-bold">{onlyA}</div>
-              </div>
+              {/* Only in B */}
               <div className="rounded-xl border border-white/10 bg-green-800 p-3 text-center">
                 <div className="text-xs uppercase opacity-80">Only in B</div>
                 <div className="text-xl font-bold">{onlyB}</div>
               </div>
+              {/* Different Quantity */}
               <div className="rounded-xl border border-white/10 bg-yellow-700 p-3 text-center">
                 <div className="text-xs uppercase opacity-80">Different Quantity</div>
                 <div className="text-xl font-bold">{diffs}</div>
@@ -1412,6 +1437,7 @@ export default function App() {
               selectedForMerge={selectedForMerge}
               onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
               addCardToDeck={addCardToDeck}
+              deckB={deckB}
             />
           </section>
           {deckBName && deckB && deckB.size > 0 && (
@@ -1428,6 +1454,7 @@ export default function App() {
                 selectedForMerge={selectedForMerge}
                 onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
                 addCardToDeck={addCardToDeck}
+                deckB={deckB}
               />
             </section>
           )}
