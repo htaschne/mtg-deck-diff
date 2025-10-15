@@ -1087,61 +1087,36 @@ const FileOrPaste = ({ label, value, setValue, example, onNameChange }) => {
   );
 };
 
-export default function App() {
-  // Handler for drag-and-drop: add card to deck by name
-  const addCardToDeck = (deckName, cardObj) => {
-    const name = cardObj?.name;
-    if (!name) return;
-    if (deckName === "A") {
-      setDeckAText((prev) => {
-        const lines = prev.split(/\r?\n/);
-        let found = false;
-        const nextLines = lines.map((line) => {
-          const m = line.match(/^(\d+)x?\s+(.+)$/i);
-          if (m && normalizeName(m[2]) === normalizeName(name)) {
-            found = true;
-            return `${parseInt(m[1], 10) + 1} ${name}`;
-          }
-          return line;
-        });
-        if (!found) nextLines.push(`1 ${name}`);
-        return nextLines.filter((l) => l.trim().length > 0).join("\n");
-      });
-    } else if (deckName === "B") {
-      setDeckBText((prev) => {
-        const lines = prev.split(/\r?\n/);
-        let found = false;
-        const nextLines = lines.map((line) => {
-          const m = line.match(/^(\d+)x?\s+(.+)$/i);
-          if (m && normalizeName(m[2]) === normalizeName(name)) {
-            found = true;
-            return `${parseInt(m[1], 10) + 1} ${name}`;
-          }
-          return line;
-        });
-        if (!found) nextLines.push(`1 ${name}`);
-        return nextLines.filter((l) => l.trim().length > 0).join("\n");
-      });
-    } else if (deckName === "C") {
-      // Add to merged deck: for now, add to A (as above)
-      setDeckAText((prev) => {
-        const lines = prev.split(/\r?\n/);
-        let found = false;
-        const nextLines = lines.map((line) => {
-          const m = line.match(/^(\d+)x?\s+(.+)$/i);
-          if (m && normalizeName(m[2]) === normalizeName(name)) {
-            found = true;
-            return `${parseInt(m[1], 10) + 1} ${name}`;
-          }
-          return line;
-        });
-        if (!found) nextLines.push(`1 ${name}`);
-        return nextLines.filter((l) => l.trim().length > 0).join("\n");
-      });
+// Utility to add a card to a deck Map and return a new Map
+function addCard(deckMap, cardObj) {
+  const name = cardObj?.name;
+  if (!name) return new Map(deckMap);
+  const normalized = normalizeName(name);
+  const updated = new Map(deckMap);
+  let found = false;
+  for (const key of updated.keys()) {
+    if (normalizeName(key) === normalized) {
+      updated.set(key, (updated.get(key) || 0) + 1);
+      found = true;
+      break;
     }
-  };
+  }
+  if (!found) updated.set(name, 1);
+  return updated;
+}
+
+function generateDeckText(deckMap) {
+  // Produces .txt format: '2 Lightning Bolt\n1 Island'
+  return Array.from(deckMap.entries())
+    .map(([name, qty]) => `${qty} ${name}`)
+    .join('\n');
+}
+
+export default function App() {
   const [deckAText, setDeckAText] = useState("");
   const [deckBText, setDeckBText] = useState("");
+  const [deckA, setDeckA] = useState(new Map());
+  const [deckB, setDeckB] = useState(new Map());
   const [deckAName, setDeckAName] = useState("Deck A");
   const [deckBName, setDeckBName] = useState("Deck B");
   const [showMerge, setShowMerge] = useState(false);
@@ -1149,8 +1124,9 @@ export default function App() {
   // --- New state for cards selected for merge
   const [selectedForMerge, setSelectedForMerge] = useState({});
 
-  const deckA = useMemo(() => parseDeckText(deckAText), [deckAText]);
-  const deckB = useMemo(() => parseDeckText(deckBText), [deckBText]);
+  // Update deckA/deckB Map objects when deckAText/deckBText changes
+  useEffect(() => setDeckA(parseDeckText(deckAText)), [deckAText]);
+  useEffect(() => setDeckB(parseDeckText(deckBText)), [deckBText]);
 
   const allNames = useMemo(() => unionNames(deckA, deckB), [deckA, deckB]);
   const { get, loading } = useScryfall(allNames);
@@ -1262,56 +1238,23 @@ export default function App() {
 
   // --- Handler for CardSearchPanel add ---
   const handleAddCard = (cardObj, deck) => {
-    // cardObj: Scryfall card object
-    const name = cardObj.name;
-    if (deck === "A") {
-      setDeckAText((prev) => {
-        // Try to find line for this card, if so, bump qty, else add
-        const lines = prev.split(/\r?\n/);
-        let found = false;
-        const nextLines = lines.map((line) => {
-          const m = line.match(/^(\d+)x?\s+(.+)$/i);
-          if (m && normalizeName(m[2]) === normalizeName(name)) {
-            found = true;
-            return `${parseInt(m[1], 10) + 1} ${name}`;
-          }
-          return line;
-        });
-        if (!found) nextLines.push(`1 ${name}`);
-        return nextLines.filter((l) => l.trim().length > 0).join("\n");
-      });
-    } else if (deck === "B") {
-      setDeckBText((prev) => {
-        const lines = prev.split(/\r?\n/);
-        let found = false;
-        const nextLines = lines.map((line) => {
-          const m = line.match(/^(\d+)x?\s+(.+)$/i);
-          if (m && normalizeName(m[2]) === normalizeName(name)) {
-            found = true;
-            return `${parseInt(m[1], 10) + 1} ${name}`;
-          }
-          return line;
-        });
-        if (!found) nextLines.push(`1 ${name}`);
-        return nextLines.filter((l) => l.trim().length > 0).join("\n");
-      });
-    } else if (deck === "C") {
-      // Add to merged deck: add to both A and B, or just to merged state?
-      // We'll add to both for simplicity (if not present), or bump in A.
-      setDeckAText((prev) => {
-        const lines = prev.split(/\r?\n/);
-        let found = false;
-        const nextLines = lines.map((line) => {
-          const m = line.match(/^(\d+)x?\s+(.+)$/i);
-          if (m && normalizeName(m[2]) === normalizeName(name)) {
-            found = true;
-            return `${parseInt(m[1], 10) + 1} ${name}`;
-          }
-          return line;
-        });
-        if (!found) nextLines.push(`1 ${name}`);
-        return nextLines.filter((l) => l.trim().length > 0).join("\n");
-      });
+    addCardToDeck(deck, cardObj);
+  };
+
+  // Handler for drag-and-drop: add card to deck by name
+  const addCardToDeck = (deckName, cardObj) => {
+    if (deckName === "A") {
+      const updated = addCard(deckA, cardObj);
+      setDeckA(updated);
+      setDeckAText(generateDeckText(updated));
+    } else if (deckName === "B") {
+      const updated = addCard(deckB, cardObj);
+      setDeckB(updated);
+      setDeckBText(generateDeckText(updated));
+    } else if (deckName === "C") {
+      const updated = addCard(deckA, cardObj);
+      setDeckA(updated);
+      setDeckAText(generateDeckText(updated));
     }
   };
 
