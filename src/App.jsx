@@ -1394,7 +1394,9 @@ export default function App() {
           className={
             showMerge
               ? "grid gap-6 md:grid-cols-3"
-              : "grid gap-6 md:grid-cols-2"
+              : deckBName && deckB && deckB.size > 0
+                ? "grid gap-6 md:grid-cols-2"
+                : "grid gap-6 md:grid-cols-1"
           }
         >
           <section>
@@ -1412,21 +1414,23 @@ export default function App() {
               addCardToDeck={addCardToDeck}
             />
           </section>
-          <section>
-            <h2 className="mb-2 text-sm font-semibold tracking-wide text-white/90">{deckBName}</h2>
-            <DeckColumn
-              title={deckBName}
-              deckMap={deckB}
-              otherDeckMap={deckA}
-              getCard={get}
-              side="B"
-              showMerge={showMerge}
-              eligibleForMerge={eligibleForMerge}
-              selectedForMerge={selectedForMerge}
-              onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
-              addCardToDeck={addCardToDeck}
-            />
-          </section>
+          {deckBName && deckB && deckB.size > 0 && (
+            <section>
+              <h2 className="mb-2 text-sm font-semibold tracking-wide text-white/90">{deckBName}</h2>
+              <DeckColumn
+                title={deckBName}
+                deckMap={deckB}
+                otherDeckMap={deckA}
+                getCard={get}
+                side="B"
+                showMerge={showMerge}
+                eligibleForMerge={eligibleForMerge}
+                selectedForMerge={selectedForMerge}
+                onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
+                addCardToDeck={addCardToDeck}
+              />
+            </section>
+          )}
           {showMerge && (
             <section>
               <h2 className="mb-2 text-sm font-semibold tracking-wide text-white/90 flex items-center gap-2">
