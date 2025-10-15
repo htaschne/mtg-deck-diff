@@ -290,10 +290,6 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
 
   // Hover state for color dist: 0 = A, 1 = B, 2 = C
   const [hovered, setHovered] = useState(null); // 0, 1, 2 or null
-  let colorDist = null;
-  if (hovered === 0) colorDist = statsA.colorDist;
-  else if (hovered === 1) colorDist = statsB.colorDist;
-  else if (hovered === 2) colorDist = statsC.colorDist;
 
   // Chart options (common), now with stacked bars
   const chartOptions = (deckIndex) => ({
@@ -321,6 +317,100 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
     },
   });
 
+  // Helper to render a color distribution block
+  function ColorDistributionBlock({ colorDist, stats }) {
+    if (!colorDist) return null;
+
+    // Prepare colorDist as array, and add 'Lands' if not present
+    let distArr = Object.entries(colorDist);
+    let hasLands = distArr.some(([col]) => col === "Lands");
+    let landsCount = 0;
+    if (stats && stats.curve && typeof stats.curve["Lands"] === "number") {
+      landsCount = stats.curve["Lands"];
+    }
+    if (!hasLands) {
+      distArr.push(["Lands", landsCount]);
+    }
+
+    // Scryfall color symbol order
+    const colorOrder = ["W", "U", "B", "R", "G", "C"];
+    // Sort so colors first, then 'Lands' last
+    distArr.sort((a, b) => {
+      if (a[0] === "Lands") return 1;
+      if (b[0] === "Lands") return -1;
+      const ia = colorOrder.indexOf(a[0]);
+      const ib = colorOrder.indexOf(b[0]);
+      if (ia === -1 && ib === -1) return a[0].localeCompare(b[0]);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+
+    // Helper for Scryfall SVGs
+    const getManaIcon = (col) => {
+      // Scryfall SVGs: e.g., https://svgs.scryfall.io/card-symbols/W.svg
+      // For hybrid, phyrexian, etc., use same as ManaCost
+      const code = col.replace("/", "");
+      const url = `https://svgs.scryfall.io/card-symbols/${code}.svg`;
+      // Only for color symbols
+      if (colorOrder.includes(col)) {
+        return (
+          <img
+            src={url}
+            alt={col}
+            title={col}
+            className="h-4 w-4 inline-block"
+            loading="lazy"
+            style={{ verticalAlign: "text-bottom" }}
+          />
+        );
+      }
+      return null;
+    };
+
+    return (
+      <div className="mt-2 mb-2">
+        <div className="text-xs font-semibold mb-1">Color Distribution</div>
+        <div className="flex flex-wrap gap-2">
+          {distArr.map(([col, count]) => {
+            if (col === "Lands") {
+              // Special style for lands
+              return (
+                <span
+                  key={col}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold"
+                  style={{ background: "#ccc", color: "#222" }}
+                >
+                  {/* Land icon: use emoji if no image */}
+                  <span
+                    className="inline-block text-base"
+                    role="img"
+                    aria-label="Land"
+                    style={{ lineHeight: "1" }}
+                  >
+                    🏞️
+                  </span>
+                  <span className="font-mono">{count}</span>
+                </span>
+              );
+            }
+            // For normal colors (WUBRGC)
+            return (
+              <span
+                key={col}
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold"
+                style={{ background: colorMap[col] || "#aaa", color: "#222" }}
+              >
+                {getManaIcon(col) || col}
+                <span className="font-mono">{count}</span>
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <aside className="fixed right-0 top-0 z-30 h-full w-80 bg-slate-900 border-l border-white/10 shadow-lg flex flex-col p-4">
       <div className="mb-4 text-lg font-bold tracking-wide">Mana Curve</div>
@@ -332,6 +422,7 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
             options={chartOptions(0)}
             height={120}
           />
+          <ColorDistributionBlock colorDist={statsA.colorDist} stats={statsA} />
         </div>
         <div>
           <div className="mb-2 text-xs font-semibold text-white/80">Deck B — CMC Curve</div>
@@ -340,6 +431,7 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
             options={chartOptions(1)}
             height={120}
           />
+          <ColorDistributionBlock colorDist={statsB.colorDist} stats={statsB} />
         </div>
         {showMerge && (
           <div>
@@ -349,25 +441,11 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
               options={chartOptions(2)}
               height={120}
             />
+            <ColorDistributionBlock colorDist={statsC.colorDist} stats={statsC} />
           </div>
         )}
       </div>
-      {hovered != null && colorDist && (
-        <div className="mt-4">
-          <div className="text-xs font-semibold mb-1">Color Distribution</div>
-          <div className="flex flex-wrap gap-2">
-            {Object.entries(colorDist).map(([col, count]) => (
-              <span
-                key={col}
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold"
-                style={{ background: colorMap[col] || "#aaa", color: "#222" }}
-              >
-                {col} <span className="font-mono">{count}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Removed hovered colorDist block */}
     </aside>
   );
 }
