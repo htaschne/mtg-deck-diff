@@ -75,6 +75,8 @@ function CardSearchPanel({ onAddCard, getCard }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const inputRef = useRef(null);
+  const [hoveredCard, setHoveredCard] = useState(null);
+  const [mobilePreviewCard, setMobilePreviewCard] = useState(null);
 
   useEffect(() => {
     let ignore = false;
@@ -118,6 +120,16 @@ function CardSearchPanel({ onAddCard, getCard }) {
     if (inputRef.current) inputRef.current.blur();
   };
 
+  // Helper to get normalized card with images
+  const getNormCard = (c) => getCard ? getCard(c.name) : null;
+
+  // Mobile: tap to show preview
+  const handlePreviewMobile = (card) => {
+    setMobilePreviewCard(card);
+  };
+
+  const closeMobilePreview = () => setMobilePreviewCard(null);
+
   return (
     <aside className="fixed left-0 top-0 z-30 h-full w-72 bg-slate-900 border-r border-white/10 shadow-lg flex flex-col p-4">
       <div className="mb-4 text-lg font-bold tracking-wide">Card Search</div>
@@ -130,11 +142,37 @@ function CardSearchPanel({ onAddCard, getCard }) {
       />
       {loading && <div className="text-xs text-gray-300 mb-2">Searching…</div>}
       {error && <div className="text-xs text-red-400 mb-2">{error}</div>}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto relative">
         {results.map((c) => {
-          const norm = getCard ? getCard(c.name) : null;
+          const norm = getNormCard(c) || c;
+          // For preview, prefer normalized card image URLs
+          const previewCard = {
+            ...c,
+            ...norm,
+            png: norm?.png || c.image_uris?.png || c.card_faces?.[0]?.image_uris?.png,
+            back_png: norm?.back_png || c.card_faces?.[1]?.image_uris?.png,
+            name: c.name,
+          };
           return (
-            <div key={c.id} className="mb-3 rounded-lg bg-black/30 p-2 flex items-center gap-2">
+            <div
+              key={c.id}
+              className="mb-3 rounded-lg bg-black/30 p-2 flex items-center gap-2 relative group"
+              onMouseEnter={() => setHoveredCard(previewCard)}
+              onMouseLeave={() => setHoveredCard((h) => (h?.id === c.id ? null : h))}
+              draggable
+              onDragStart={e => {
+                e.dataTransfer.setData('card', JSON.stringify(previewCard));
+              }}
+              // Mobile tap: show preview
+              onClick={e => {
+                // Only show on mobile (hide on md+)
+                if (window.innerWidth < 768) {
+                  handlePreviewMobile(previewCard);
+                }
+              }}
+              tabIndex={0}
+              style={{ cursor: "grab" }}
+            >
               <img
                 src={norm?.small || c.image_uris?.small || c.card_faces?.[0]?.image_uris?.small}
                 alt={c.name}
@@ -147,29 +185,78 @@ function CardSearchPanel({ onAddCard, getCard }) {
               <div className="flex flex-col gap-1">
                 <button
                   className="rounded bg-red-700 hover:bg-red-600 px-2 py-1 text-xs text-white"
-                  onClick={() => handleAdd(c, "A")}
+                  onClick={e => { e.stopPropagation(); handleAdd(c, "A"); }}
                   title="Add to Deck A"
+                  tabIndex={-1}
                 >
                   A
                 </button>
                 <button
                   className="rounded bg-green-700 hover:bg-green-600 px-2 py-1 text-xs text-white"
-                  onClick={() => handleAdd(c, "B")}
+                  onClick={e => { e.stopPropagation(); handleAdd(c, "B"); }}
                   title="Add to Deck B"
+                  tabIndex={-1}
                 >
                   B
                 </button>
                 <button
                   className="rounded bg-blue-700 hover:bg-blue-600 px-2 py-1 text-xs text-white"
-                  onClick={() => handleAdd(c, "C")}
+                  onClick={e => { e.stopPropagation(); handleAdd(c, "C"); }}
                   title="Add to Merged Deck"
+                  tabIndex={-1}
                 >
                   C
                 </button>
               </div>
+              {/* Desktop large preview */}
+              {previewCard.png && (
+                <div className="pointer-events-none absolute top-0 left-full ml-3 z-40 hidden md:group-hover:block">
+                  <div className="rounded-xl border border-white/20 bg-black/80 p-2 shadow-2xl">
+                    <img
+                      src={previewCard.png}
+                      alt={previewCard.name}
+                      className="h-80 rounded-lg object-cover border border-white/10 shadow-lg"
+                      style={{ maxWidth: "250px" }}
+                    />
+                    {previewCard.back_png && (
+                      <img
+                        src={previewCard.back_png}
+                        alt={previewCard.name + " (back)"}
+                        className="h-80 rounded-lg object-cover border border-white/10 shadow-lg mt-2"
+                        style={{ maxWidth: "250px" }}
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           );
         })}
+        {/* Mobile preview modal */}
+        {mobilePreviewCard && mobilePreviewCard.png && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+            onClick={closeMobilePreview}
+            style={{ cursor: "pointer" }}
+          >
+            <div>
+              <img
+                src={mobilePreviewCard.png}
+                alt={mobilePreviewCard.name}
+                className="max-h-full rounded-xl shadow-2xl border border-white/20"
+                style={{ maxWidth: "90vw", maxHeight: "80vh" }}
+              />
+              {mobilePreviewCard.back_png && (
+                <img
+                  src={mobilePreviewCard.back_png}
+                  alt={mobilePreviewCard.name + " (back)"}
+                  className="max-h-full rounded-xl shadow-2xl border border-white/20 mt-2"
+                  style={{ maxWidth: "90vw", maxHeight: "80vh" }}
+                />
+              )}
+            </div>
+          </div>
+        )}
       </div>
       <div className="mt-auto pt-4 text-xs text-gray-400 opacity-70">
         Powered by Scryfall search.
@@ -875,10 +962,32 @@ const DeckColumn = ({
   eligibleForMerge = () => false,
   selectedForMerge = {},
   onCardClick = null,
+  addCardToDeck, // for drag-and-drop
 }) => {
   const names = useMemo(() => [...deckMap.keys()].sort((a, b) => a.localeCompare(b)), [deckMap]);
+  // Drag-and-drop handlers
+  const handleDragOver = (e) => {
+    e.preventDefault();
+  };
+  const handleDrop = (e) => {
+    e.preventDefault();
+    if (!addCardToDeck) return;
+    const cardStr = e.dataTransfer.getData('card');
+    if (cardStr) {
+      try {
+        const card = JSON.parse(cardStr);
+        addCardToDeck(side, card);
+      } catch { }
+    }
+  };
   return (
-    <div className="space-y-2" role="list" aria-label={`${title} cards`}>
+    <div
+      className="space-y-2"
+      role="list"
+      aria-label={`${title} cards`}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       {names.map((name) => {
         // When showMerge is true, hide cards present in both A and B, and hide those selected for merge
         if (showMerge) {
@@ -965,6 +1074,58 @@ const FileOrPaste = ({ label, value, setValue, example, onNameChange }) => {
 };
 
 export default function App() {
+  // Handler for drag-and-drop: add card to deck by name
+  const addCardToDeck = (deckName, cardObj) => {
+    const name = cardObj?.name;
+    if (!name) return;
+    if (deckName === "A") {
+      setDeckAText((prev) => {
+        const lines = prev.split(/\r?\n/);
+        let found = false;
+        const nextLines = lines.map((line) => {
+          const m = line.match(/^(\d+)x?\s+(.+)$/i);
+          if (m && normalizeName(m[2]) === normalizeName(name)) {
+            found = true;
+            return `${parseInt(m[1], 10) + 1} ${name}`;
+          }
+          return line;
+        });
+        if (!found) nextLines.push(`1 ${name}`);
+        return nextLines.filter((l) => l.trim().length > 0).join("\n");
+      });
+    } else if (deckName === "B") {
+      setDeckBText((prev) => {
+        const lines = prev.split(/\r?\n/);
+        let found = false;
+        const nextLines = lines.map((line) => {
+          const m = line.match(/^(\d+)x?\s+(.+)$/i);
+          if (m && normalizeName(m[2]) === normalizeName(name)) {
+            found = true;
+            return `${parseInt(m[1], 10) + 1} ${name}`;
+          }
+          return line;
+        });
+        if (!found) nextLines.push(`1 ${name}`);
+        return nextLines.filter((l) => l.trim().length > 0).join("\n");
+      });
+    } else if (deckName === "C") {
+      // Add to merged deck: for now, add to A (as above)
+      setDeckAText((prev) => {
+        const lines = prev.split(/\r?\n/);
+        let found = false;
+        const nextLines = lines.map((line) => {
+          const m = line.match(/^(\d+)x?\s+(.+)$/i);
+          if (m && normalizeName(m[2]) === normalizeName(name)) {
+            found = true;
+            return `${parseInt(m[1], 10) + 1} ${name}`;
+          }
+          return line;
+        });
+        if (!found) nextLines.push(`1 ${name}`);
+        return nextLines.filter((l) => l.trim().length > 0).join("\n");
+      });
+    }
+  };
   const [deckAText, setDeckAText] = useState("");
   const [deckBText, setDeckBText] = useState("");
   const [deckAName, setDeckAName] = useState("Deck A");
@@ -1244,6 +1405,7 @@ export default function App() {
               eligibleForMerge={eligibleForMerge}
               selectedForMerge={selectedForMerge}
               onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
+              addCardToDeck={addCardToDeck}
             />
           </section>
           <section>
@@ -1258,6 +1420,7 @@ export default function App() {
               eligibleForMerge={eligibleForMerge}
               selectedForMerge={selectedForMerge}
               onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
+              addCardToDeck={addCardToDeck}
             />
           </section>
           {showMerge && (
