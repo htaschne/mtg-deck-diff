@@ -1,3 +1,67 @@
+// --- Merge Deck helpers ----------------------------------------------------
+const MERGE_CHOICES_KEY = "mtg_deck_diff_merge_choices_v1";
+const loadMergeChoices = () => {
+  try {
+    const raw = localStorage.getItem(MERGE_CHOICES_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw) || {};
+  } catch {
+    return {};
+  }
+};
+const saveMergeChoices = (obj) => {
+  try {
+    localStorage.setItem(MERGE_CHOICES_KEY, JSON.stringify(obj));
+  } catch { }
+};
+// Compute merged deck based on deckA, deckB and mergeChoices.
+// Returns array of { name, qty, choice, options } sorted by name.
+const computeMergedDeck = (deckA, deckB, mergeChoices) => {
+  const names = unionNames(deckA, deckB);
+  return names.map((name) => {
+    const qa = deckA.get(name) || 0;
+    const qb = deckB.get(name) || 0;
+    let options = [];
+    let defaultChoice = null;
+    if (qa > 0 && qb > 0) {
+      if (qa === qb) {
+        options = ["A", "B"];
+        defaultChoice = "A";
+      } else {
+        options = ["A", "B", "Both"];
+        defaultChoice = "Both";
+      }
+    } else if (qa > 0) {
+      options = ["A"];
+      defaultChoice = "A";
+    } else if (qb > 0) {
+      options = ["B"];
+      defaultChoice = "B";
+    }
+    const choice = mergeChoices[name] || defaultChoice;
+    let qty = 0;
+    if (choice === "A") qty = qa;
+    else if (choice === "B") qty = qb;
+    else if (choice === "Both") qty = qa + qb;
+    return { name, qty, choice, options, qa, qb };
+  }).filter((row) => row.qty > 0);
+};
+// Download merged deck as .txt file
+const downloadMergedDeck = (deckRows) => {
+  const lines = deckRows.map((row) => `${row.qty} ${row.name}`);
+  const text = lines.join("\n");
+  const blob = new Blob([text], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "merged_deck.txt";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 100);
+};
 import React, { useMemo, useState, useEffect, useRef } from "react";
 
 // --- Utilities --------------------------------------------------------------
@@ -415,22 +479,58 @@ const CardRow = ({ deckLabel, name, qty, qa, qb, getCard, side }) => {
   );
 };
 
-const DeckColumn = ({ title, deckMap, otherDeckMap, getCard, side }) => {
+const DeckColumn = ({
+  title,
+  deckMap,
+  otherDeckMap,
+  getCard,
+  side,
+  showMerge = false,
+  eligibleForMerge = () => false,
+  selectedForMerge = {},
+  onCardClick = null,
+}) => {
   const names = useMemo(() => [...deckMap.keys()].sort((a, b) => a.localeCompare(b)), [deckMap]);
   return (
     <div className="space-y-2" role="list" aria-label={`${title} cards`}>
-      {names.map((name) => (
-        <CardRow
-          key={`${side}-${name}`}
-          deckLabel={title}
-          name={name}
-          qty={deckMap.get(name)}
-          qa={side === "A" ? deckMap.get(name) : otherDeckMap.get(name)}
-          qb={side === "B" ? deckMap.get(name) : otherDeckMap.get(name)}
-          getCard={getCard}
-          side={side}
-        />
-      ))}
+      {names.map((name) => {
+        // When showMerge is true, hide cards present in both A and B, and hide those selected for merge
+        if (showMerge) {
+          if (eligibleForMerge(name) && !selectedForMerge[name]) {
+            // Eligible and not selected: show with highlight
+            // (handled below)
+          } else if (selectedForMerge[name]) {
+            // Selected for merge: hide from A/B columns
+            return null;
+          } else if (eligibleForMerge(name)) {
+            // Defensive: already handled above
+          } else if (otherDeckMap.has(name) && deckMap.has(name)) {
+            // Present in both decks but not eligible for merge: hide
+            return null;
+          }
+        }
+        // Visual highlight for eligible-for-merge cards
+        const isEligible = showMerge && eligibleForMerge(name) && !selectedForMerge[name];
+        const rowOpacity = showMerge && eligibleForMerge(name) && selectedForMerge[name] ? "opacity-40 pointer-events-none" : "";
+        return (
+          <div
+            key={`${side}-${name}`}
+            className={isEligible ? "ring-2 ring-blue-400 rounded-xl" : ""}
+            style={rowOpacity ? { opacity: 0.4, pointerEvents: "none" } : undefined}
+            onClick={isEligible && onCardClick ? () => onCardClick(name) : undefined}
+          >
+            <CardRow
+              deckLabel={title}
+              name={name}
+              qty={deckMap.get(name)}
+              qa={side === "A" ? deckMap.get(name) : otherDeckMap.get(name)}
+              qb={side === "B" ? deckMap.get(name) : otherDeckMap.get(name)}
+              getCard={getCard}
+              side={side}
+            />
+          </div>
+        );
+      })}
     </div>
   );
 };
@@ -483,6 +583,10 @@ export default function App() {
   const [deckBText, setDeckBText] = useState("");
   const [deckAName, setDeckAName] = useState("Deck A");
   const [deckBName, setDeckBName] = useState("Deck B");
+  const [showMerge, setShowMerge] = useState(false);
+  const [mergeChoices, setMergeChoices] = useState(() => loadMergeChoices());
+  // --- New state for cards selected for merge
+  const [selectedForMerge, setSelectedForMerge] = useState({});
 
   const deckA = useMemo(() => parseDeckText(deckAText), [deckAText]);
   const deckB = useMemo(() => parseDeckText(deckBText), [deckBText]);
@@ -494,6 +598,106 @@ export default function App() {
   const onlyA = useMemo(() => allNames.filter((n) => computeStatus(deckA.get(n), deckB.get(n)) === "onlyA").length, [allNames, deckA, deckB]);
   const onlyB = useMemo(() => allNames.filter((n) => computeStatus(deckA.get(n), deckB.get(n)) === "onlyB").length, [allNames, deckA, deckB]);
   const diffs = useMemo(() => allNames.filter((n) => computeStatus(deckA.get(n), deckB.get(n)) === "diff").length, [allNames, deckA, deckB]);
+
+  // Compute merged deck rows for display
+  // --- Custom mergedDeckRows for merge mode with selectedForMerge
+  const mergedDeckRows = useMemo(() => {
+    if (!showMerge) {
+      return computeMergedDeck(deckA, deckB, mergeChoices);
+    }
+    // Cards present in both decks (intersection)
+    const both = allNames.filter(
+      (n) => deckA.has(n) && deckB.has(n)
+    );
+    // Cards selected for merge (from either deck, not already in both)
+    const selected = Object.keys(selectedForMerge).filter(
+      (n) =>
+        selectedForMerge[n] &&
+        ((deckA.has(n) && !deckB.has(n)) || (deckB.has(n) && !deckA.has(n)))
+    );
+    const mergedNames = [...both, ...selected].sort((a, b) => a.localeCompare(b));
+    return mergedNames.map((name) => {
+      const qa = deckA.get(name) || 0;
+      const qb = deckB.get(name) || 0;
+      // For cards in both, use merged computation
+      if (deckA.has(name) && deckB.has(name)) {
+        let options = [];
+        let defaultChoice = null;
+        if (qa === qb) {
+          options = ["A", "B"];
+          defaultChoice = "A";
+        } else {
+          options = ["A", "B", "Both"];
+          defaultChoice = "Both";
+        }
+        const choice = mergeChoices[name] || defaultChoice;
+        let qty = 0;
+        if (choice === "A") qty = qa;
+        else if (choice === "B") qty = qb;
+        else if (choice === "Both") qty = qa + qb;
+        return { name, qty, choice, options, qa, qb };
+      }
+      // For cards selected from A or B only
+      let options = [];
+      let defaultChoice = null;
+      if (qa > 0) {
+        options = ["A"];
+        defaultChoice = "A";
+      } else if (qb > 0) {
+        options = ["B"];
+        defaultChoice = "B";
+      }
+      const choice = mergeChoices[name] || defaultChoice;
+      let qty = 0;
+      if (choice === "A") qty = qa;
+      else if (choice === "B") qty = qb;
+      return { name, qty, choice, options, qa, qb };
+    }).filter((row) => row.qty > 0);
+  }, [showMerge, deckA, deckB, mergeChoices, selectedForMerge, allNames]);
+
+  // Save mergeChoices to localStorage when changed
+  useEffect(() => {
+    saveMergeChoices(mergeChoices);
+  }, [mergeChoices]);
+
+  // Reset merge choices if deckA or deckB changes drastically
+  useEffect(() => {
+    // Remove merge choices for cards that no longer exist
+    const validNames = new Set(unionNames(deckA, deckB));
+    const filtered = {};
+    for (const k in mergeChoices) {
+      if (validNames.has(k)) filtered[k] = mergeChoices[k];
+    }
+    if (Object.keys(filtered).length !== Object.keys(mergeChoices).length) {
+      setMergeChoices(filtered);
+    }
+    // Remove selectedForMerge for names that no longer exist
+    setSelectedForMerge((prev) => {
+      const filteredSel = {};
+      for (const k in prev) {
+        if (validNames.has(k)) filteredSel[k] = prev[k];
+      }
+      return filteredSel;
+    });
+    // eslint-disable-next-line
+  }, [deckA, deckB]);
+
+  // Handler for merge choice change
+  const handleMergeChoice = (name, value) => {
+    setMergeChoices((prev) => ({ ...prev, [name]: value }));
+  };
+
+  // --- Merge logic helpers
+  // A card is eligible for merge selection if it is present in only one deck (A or B, not both)
+  const eligibleForMerge = (name) =>
+    (deckA.has(name) && !deckB.has(name)) || (deckB.has(name) && !deckA.has(name));
+  // Toggle selection for merge
+  const handleToggleSelectForMerge = (name) => {
+    setSelectedForMerge((prev) => ({
+      ...prev,
+      [name]: !prev[name],
+    }));
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-950 text-white">
@@ -528,7 +732,7 @@ export default function App() {
         </div>
 
         {/* Summary bar */}
-        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
           <div className="rounded-xl border border-white/10 bg-gray-800 p-3 text-center">
             <div className="text-xs uppercase opacity-80">Equal Quantity</div>
             <div className="text-xl font-bold">{equalCount}</div>
@@ -545,10 +749,33 @@ export default function App() {
             <div className="text-xs uppercase opacity-80">Different Quantity</div>
             <div className="text-xl font-bold">{diffs}</div>
           </div>
+          <div className="rounded-xl border border-white/10 bg-blue-800 p-3 text-center cursor-pointer select-none"
+            role="button"
+            tabIndex={0}
+            aria-pressed={showMerge}
+            onClick={() => setShowMerge((v) => !v)}
+            onKeyDown={(e) => {
+              if (e.key === " " || e.key === "Enter") setShowMerge((v) => !v);
+            }}
+          >
+            <div className="text-xs uppercase opacity-80 flex items-center justify-center gap-1">
+              <svg className="inline h-4 w-4 text-blue-200" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10M7 12h10M7 17h6" />
+              </svg>
+              Merge
+            </div>
+            <div className="text-xl font-bold">{showMerge ? "On" : "Off"}</div>
+          </div>
         </div>
 
         {/* Columns */}
-        <div className="grid gap-6 md:grid-cols-2">
+        <div
+          className={
+            showMerge
+              ? "grid gap-6 md:grid-cols-3"
+              : "grid gap-6 md:grid-cols-2"
+          }
+        >
           <section>
             <h2 className="mb-2 text-sm font-semibold tracking-wide text-white/90">{deckAName}</h2>
             <DeckColumn
@@ -557,6 +784,10 @@ export default function App() {
               otherDeckMap={deckB}
               getCard={get}
               side="A"
+              showMerge={showMerge}
+              eligibleForMerge={eligibleForMerge}
+              selectedForMerge={selectedForMerge}
+              onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
             />
           </section>
           <section>
@@ -567,8 +798,115 @@ export default function App() {
               otherDeckMap={deckA}
               getCard={get}
               side="B"
+              showMerge={showMerge}
+              eligibleForMerge={eligibleForMerge}
+              selectedForMerge={selectedForMerge}
+              onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
             />
           </section>
+          {showMerge && (
+            <section>
+              <h2 className="mb-2 text-sm font-semibold tracking-wide text-white/90 flex items-center gap-2">
+                <svg className="inline h-5 w-5 text-blue-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10M7 12h10M7 17h6" />
+                </svg>
+                Merged Deck
+                <button
+                  className="ml-auto rounded-lg bg-blue-700 hover:bg-blue-600 px-3 py-1 text-xs font-semibold ring-1 ring-blue-400 transition-colors"
+                  onClick={() => downloadMergedDeck(mergedDeckRows)}
+                  type="button"
+                >
+                  Download .txt
+                </button>
+              </h2>
+              <div className="space-y-2" role="list" aria-label="Merged deck cards">
+                {mergedDeckRows.map((row) => {
+                  const card = get(row.name);
+                  // For cards with multiple options, show a selector
+                  const needsSelector = row.options.length > 1;
+                  return (
+                    <div key={`merge-${row.name}`} className="group relative rounded-xl shadow-sm">
+                      <div className="relative overflow-hidden rounded-xl border border-white/10 bg-blue-900/50">
+                        {/* Background art */}
+                        {card?.art && (
+                          <div
+                            className="absolute inset-0 opacity-30 bg-cover bg-center"
+                            style={{ backgroundImage: `url(${card.art})` }}
+                            aria-hidden
+                          />
+                        )}
+                        {/* Scrim */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-blue-900/20" aria-hidden />
+                        {/* Content */}
+                        <div className="relative z-10 flex items-center gap-3 p-2">
+                          {/* Thumbnail */}
+                          {card?.small ? (
+                            <img
+                              src={card.small}
+                              alt={row.name}
+                              className="h-12 w-9 rounded-md object-cover ring-1 ring-white/10"
+                            />
+                          ) : (
+                            <div className="h-12 w-9 rounded-md bg-black/30 ring-1 ring-white/10 flex items-center justify-center text-[10px] leading-tight text-white/60">
+                              N/A
+                            </div>
+                          )}
+                          {/* Quantity + Header */}
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between">
+                              <div className="truncate text-sm font-semibold tracking-wide">
+                                <span className="mr-2 opacity-90">{row.qty}×</span>
+                                <span title={row.name}>{row.name}</span>
+                              </div>
+                              <div className="ml-2 flex items-center">
+                                {/* Mana cost string (rendered as mana symbols) */}
+                                {card?.mana_cost && <ManaCost cost={card.mana_cost} />}
+                              </div>
+                            </div>
+                            {/* Type line */}
+                            {card?.type_line && (
+                              <div className="truncate text-xs opacity-80">{card.type_line}</div>
+                            )}
+                          </div>
+                          {/* Choice selector for diffs */}
+                          {needsSelector && (
+                            <div className="ml-2 flex gap-1">
+                              {row.options.map((opt) => {
+                                let color, label;
+                                if (opt === "A") {
+                                  color = "bg-red-700 hover:bg-red-600 ring-red-400";
+                                  label = `A${row.qa !== row.qb ? ` (${row.qa})` : ""}`;
+                                } else if (opt === "B") {
+                                  color = "bg-green-700 hover:bg-green-600 ring-green-400";
+                                  label = `B${row.qa !== row.qb ? ` (${row.qb})` : ""}`;
+                                } else if (opt === "Both") {
+                                  color = "bg-blue-700 hover:bg-blue-600 ring-blue-400";
+                                  label = `Both (${row.qa + row.qb})`;
+                                }
+                                return (
+                                  <button
+                                    key={opt}
+                                    className={`rounded-md px-2 py-1 text-xs font-semibold ring-1 transition-colors
+                                      ${color} ${row.choice === opt ? "opacity-100" : "opacity-60"}
+                                    `}
+                                    onClick={() => handleMergeChoice(row.name, opt)}
+                                    type="button"
+                                    aria-pressed={row.choice === opt}
+                                  >
+                                    {label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
         </div>
 
         {/* Footer */}
