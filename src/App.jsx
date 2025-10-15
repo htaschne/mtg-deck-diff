@@ -1348,22 +1348,26 @@ export default function App() {
 
         {/* Summary bar */}
         <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
-          <div className="rounded-xl border border-white/10 bg-gray-800 p-3 text-center">
-            <div className="text-xs uppercase opacity-80">Equal Quantity</div>
-            <div className="text-xl font-bold">{equalCount}</div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-red-800 p-3 text-center">
-            <div className="text-xs uppercase opacity-80">Only in A</div>
-            <div className="text-xl font-bold">{onlyA}</div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-green-800 p-3 text-center">
-            <div className="text-xs uppercase opacity-80">Only in B</div>
-            <div className="text-xl font-bold">{onlyB}</div>
-          </div>
-          <div className="rounded-xl border border-white/10 bg-yellow-700 p-3 text-center">
-            <div className="text-xs uppercase opacity-80">Different Quantity</div>
-            <div className="text-xl font-bold">{diffs}</div>
-          </div>
+          {(deckA.size > 0 && deckB.size > 0) && (
+            <>
+              <div className="rounded-xl border border-white/10 bg-gray-800 p-3 text-center">
+                <div className="text-xs uppercase opacity-80">Equal Quantity</div>
+                <div className="text-xl font-bold">{equalCount}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-red-800 p-3 text-center">
+                <div className="text-xs uppercase opacity-80">Only in A</div>
+                <div className="text-xl font-bold">{onlyA}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-green-800 p-3 text-center">
+                <div className="text-xs uppercase opacity-80">Only in B</div>
+                <div className="text-xl font-bold">{onlyB}</div>
+              </div>
+              <div className="rounded-xl border border-white/10 bg-yellow-700 p-3 text-center">
+                <div className="text-xs uppercase opacity-80">Different Quantity</div>
+                <div className="text-xl font-bold">{diffs}</div>
+              </div>
+            </>
+          )}
           {canShowMerge && (
             <div className="rounded-xl border border-white/10 bg-blue-800 p-3 text-center cursor-pointer select-none"
               role="button"
