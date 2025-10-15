@@ -180,6 +180,13 @@ function CardSearchPanel({ onAddCard, getCard }) {
 
 // --- ManaCurvePanel: right sidebar with mana curve bar chart ---
 function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
+  // Color symbol mapping for legend
+  const colorMap = {
+    W: "#f9e79f", U: "#85c1e9", B: "#566573", R: "#e74c3c", G: "#27ae60", C: "#aaa",
+  };
+  // Color keys
+  const colorKeys = ["W", "U", "B", "R", "G", "C"];
+
   // Helper: get mana value (CMC) from card object
   const getManaValue = (card) => {
     if (!card) return null;
@@ -203,15 +210,18 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
   // Helper: get color identity from card object
   const getColors = (card) => card?.color_identity || card?.colors || [];
 
-  // Compute mana curve and color dist for each deck
+  // Compute mana curve, color dist, and colorByCmc for each deck
   const computeStats = (deckMap) => {
     const curve = {};
     const colorDist = {};
+    const colorByCmc = {};
     for (const [name, qty] of deckMap.entries()) {
       const card = getCard(name);
+      const isLand = card?.type_line && card.type_line.includes("Land");
       const cmc = getManaValue(card);
       const colors = getColors(card);
-      const key = cmc != null ? Math.min(Math.max(Math.round(cmc), 0), 7) : 0;
+      // lands go into special "Lands" bucket, others by CMC
+      const key = isLand ? "Lands" : (cmc != null ? Math.min(Math.max(Math.round(cmc), 0), 7) : 0);
       curve[key] = (curve[key] || 0) + qty;
       // Color dist: count per color symbol
       if (colors && colors.length) {
@@ -221,8 +231,17 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
       } else {
         colorDist["C"] = (colorDist["C"] || 0) + qty;
       }
+      // Color by CMC or by "Lands"
+      if (!colorByCmc[key]) colorByCmc[key] = {};
+      if (colors && colors.length) {
+        colors.forEach((col) => {
+          colorByCmc[key][col] = (colorByCmc[key][col] || 0) + qty;
+        });
+      } else {
+        colorByCmc[key]["C"] = (colorByCmc[key]["C"] || 0) + qty;
+      }
     }
-    return { curve, colorDist };
+    return { curve, colorDist, colorByCmc };
   };
 
   // Convert mergedDeckRows to Map for stats
@@ -240,45 +259,33 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
   const statsB = useMemo(() => computeStats(deckB), [deckB, getCard]);
   const statsC = useMemo(() => computeStats(mergedMap), [mergedMap, getCard]);
 
-  // Prepare chart data for each deck
-  const labels = ["0", "1", "2", "3", "4", "5", "6", "7+"];
-  const getCurveArr = (curve) => labels.map((l, i) =>
-    i < 7 ? (curve[i] || 0) : (curve[7] || 0)
-  );
+  // Chart labels: "Lands" first, then 0..6, then "7+"
+  const labels = ["Lands", "0", "1", "2", "3", "4", "5", "6", "7+"];
+  // The corresponding keys in colorByCmc: "Lands", 0..6, 7
+  const cmcKeys = ["Lands", 0, 1, 2, 3, 4, 5, 6, 7];
+
+  // Generate stacked datasets per color for a deck stats/colorByCmc
+  function makeStackedDatasets(stats, labelPrefix, stackKey) {
+    return colorKeys.map((color) => ({
+      label: color,
+      data: cmcKeys.map((cmc) => stats.colorByCmc[cmc]?.[color] || 0),
+      backgroundColor: colorMap[color],
+      stack: stackKey,
+      borderWidth: 0,
+    }));
+  }
+
   const dataA = {
     labels,
-    datasets: [
-      {
-        label: "Deck A",
-        data: getCurveArr(statsA.curve),
-        backgroundColor: "rgba(220,38,38,0.7)",
-      },
-    ],
+    datasets: makeStackedDatasets(statsA, "Deck A", "stackA"),
   };
   const dataB = {
     labels,
-    datasets: [
-      {
-        label: "Deck B",
-        data: getCurveArr(statsB.curve),
-        backgroundColor: "rgba(16,185,129,0.7)",
-      },
-    ],
+    datasets: makeStackedDatasets(statsB, "Deck B", "stackB"),
   };
   const dataC = {
     labels,
-    datasets: [
-      {
-        label: "Merged",
-        data: getCurveArr(statsC.curve),
-        backgroundColor: "rgba(59,130,246,0.7)",
-      },
-    ],
-  };
-
-  // Color symbol mapping for legend
-  const colorMap = {
-    W: "#f9e79f", U: "#85c1e9", B: "#566573", R: "#e74c3c", G: "#27ae60", C: "#aaa",
+    datasets: makeStackedDatasets(statsC, "Merged", "stackC"),
   };
 
   // Hover state for color dist: 0 = A, 1 = B, 2 = C
@@ -288,7 +295,7 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
   else if (hovered === 1) colorDist = statsB.colorDist;
   else if (hovered === 2) colorDist = statsC.colorDist;
 
-  // Chart options (common)
+  // Chart options (common), now with stacked bars
   const chartOptions = (deckIndex) => ({
     responsive: true,
     plugins: {
@@ -305,8 +312,8 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
       },
     },
     scales: {
-      x: { ticks: { color: "#ccc" }, grid: { color: "#333" } },
-      y: { ticks: { color: "#ccc" }, grid: { color: "#333" }, beginAtZero: true },
+      x: { stacked: true, ticks: { color: "#ccc" }, grid: { color: "#333" } },
+      y: { stacked: true, ticks: { color: "#ccc" }, grid: { color: "#333" }, beginAtZero: true },
     },
     onHover: (e, elements) => {
       if (elements && elements.length > 0) setHovered(deckIndex);
