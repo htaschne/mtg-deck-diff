@@ -973,7 +973,9 @@ const DeckColumn = ({
   onCardClick = null,
   addCardToDeck, // for drag-and-drop
   deckB, // pass deckB for merge overlay logic
+  removeCardFromDeck, // for live add/remove
 }) => {
+  const [hovered, setHovered] = useState(null);
   const names = useMemo(() => [...deckMap.keys()].sort((a, b) => a.localeCompare(b)), [deckMap]);
   // Drag-and-drop handlers
   const handleDragOver = (e) => {
@@ -1020,6 +1022,23 @@ const DeckColumn = ({
         const rowOpacity = (deckB && deckB.size > 0 && showMerge && eligibleForMerge(name) && selectedForMerge[name])
           ? "opacity-40 pointer-events-none"
           : "";
+        // Live quantity and cardData for this card
+        const cardData = deckMap.get(name);
+        const quantity = cardData?.quantity ?? deckMap.get(name)?.quantity ?? deckMap.get(name) ?? 0;
+        // Use getCard for card info
+        const card = getCard(name);
+        // Determine background color for card row
+        const qa = side === "A" ? deckMap.get(name) : otherDeckMap.get(name);
+        const qb = side === "B" ? deckMap.get(name) : otherDeckMap.get(name);
+        const inBothSameQty = qa && qb && qa === qb;
+        const onlyInB = !qa && qb;
+        const onlyInA = qa && !qb;
+        const diffQty = qa && qb && qa !== qb;
+        const bgColor =
+          inBothSameQty ? "bg-gray-700" :
+            onlyInB ? "bg-green-700" :
+              (deckB && deckB.size > 0 && onlyInA) ? "bg-red-700" :
+                diffQty ? "bg-yellow-700" : "bg-gray-800";
         return (
           <div
             key={`${side}-${name}`}
@@ -1027,16 +1046,81 @@ const DeckColumn = ({
             style={rowOpacity ? { opacity: 0.4, pointerEvents: "none" } : undefined}
             onClick={isEligible && onCardClick ? () => onCardClick(name) : undefined}
           >
-            <CardRow
-              deckLabel={title}
-              name={name}
-              qty={deckMap.get(name)}
-              qa={side === "A" ? deckMap.get(name) : otherDeckMap.get(name)}
-              qb={side === "B" ? deckMap.get(name) : otherDeckMap.get(name)}
-              getCard={getCard}
-              side={side}
-              deckB={deckB}
-            />
+            {/* Card container with live quantity and handlers */}
+            <div
+              onClick={(e) => { e.preventDefault(); addCardToDeck && addCardToDeck(side, { name, quantity: 1 }); }}
+              onContextMenu={(e) => { e.preventDefault(); removeCardFromDeck && removeCardFromDeck(side, name); }}
+              className={`group relative rounded-xl shadow-sm ${bgColor}`}
+              onMouseEnter={() => setHovered(name)}
+              onMouseLeave={() => setHovered(null)}
+              role="listitem"
+              style={{ cursor: "pointer" }}
+            >
+              <div className={`relative overflow-hidden rounded-xl border border-white/10 ${bgColor}`}>
+                {/* Background art */}
+                {card?.art && (
+                  <div
+                    className="absolute inset-0 opacity-30 bg-cover bg-center"
+                    style={{ backgroundImage: `url(${card.art})` }}
+                    aria-hidden
+                  />
+                )}
+                {/* Scrim */}
+                <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-black/30" aria-hidden />
+                {/* Content */}
+                <div className="relative z-10 flex items-center gap-3 p-2">
+                  {/* Thumbnail */}
+                  {card?.small ? (
+                    <img
+                      src={card.small}
+                      alt={name}
+                      className="h-12 w-9 rounded-md object-cover ring-1 ring-white/10"
+                    />
+                  ) : (
+                    <div className="h-12 w-9 rounded-md bg-black/30 ring-1 ring-white/10 flex items-center justify-center text-[10px] leading-tight text-white/60">
+                      N/A
+                    </div>
+                  )}
+                  {/* Quantity + Header */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <div className="truncate text-sm font-semibold tracking-wide">
+                        <span className="mr-2 opacity-90">{deckMap.get(name)?.quantity ?? deckMap.get(name) ?? 0}×</span>
+                        <span title={name}>{name}</span>
+                      </div>
+                      <div className="ml-2 flex items-center">
+                        {/* Mana cost string (rendered as mana symbols) */}
+                        {card?.mana_cost && (
+                          <ManaCost cost={card.mana_cost} />
+                        )}
+                        <DiffBadge qa={qa} qb={qb} side={side} />
+                      </div>
+                    </div>
+                    {/* Type line */}
+                    {card?.type_line && (
+                      <div className="truncate text-xs opacity-80">{card.type_line}</div>
+                    )}
+                  </div>
+                  {/* Tap to open modal on mobile */}
+                  {card?.png && (
+                    <button
+                      className="md:hidden ml-2 rounded-lg bg-black/30 px-2 py-1 text-xs ring-1 ring-white/10"
+                      onClick={e => { e.stopPropagation(); }}
+                    >
+                      Preview
+                    </button>
+                  )}
+                </div>
+                {/* Hover preview image (desktop) */}
+                {hovered === name && (
+                  <img
+                    src={card?.image_uris?.normal || card?.png}
+                    alt={name}
+                    className="absolute top-full left-0 mt-2 w-[250px] rounded-lg shadow-2xl border border-gray-300"
+                  />
+                )}
+              </div>
+            </div>
           </div>
         );
       })}
@@ -1113,6 +1197,47 @@ function generateDeckText(deckMap) {
 }
 
 export default function App() {
+  // Remove card from deck handler
+  const removeCardFromDeck = (deckName, name) => {
+    if (deckName === "A") {
+      const updated = new Map(deckA);
+      if (updated.has(name)) {
+        let val = updated.get(name);
+        if (typeof val === "object" && val.quantity !== undefined) {
+          val = { ...val, quantity: Math.max(0, val.quantity - 1) };
+          if (val.quantity <= 0) {
+            updated.delete(name);
+          } else {
+            updated.set(name, val);
+          }
+        } else {
+          // fallback to numeric
+          if (val <= 1) updated.delete(name);
+          else updated.set(name, val - 1);
+        }
+      }
+      setDeckA(updated);
+      setDeckAText(generateDeckText(updated));
+    } else if (deckName === "B") {
+      const updated = new Map(deckB);
+      if (updated.has(name)) {
+        let val = updated.get(name);
+        if (typeof val === "object" && val.quantity !== undefined) {
+          val = { ...val, quantity: Math.max(0, val.quantity - 1) };
+          if (val.quantity <= 0) {
+            updated.delete(name);
+          } else {
+            updated.set(name, val);
+          }
+        } else {
+          if (val <= 1) updated.delete(name);
+          else updated.set(name, val - 1);
+        }
+      }
+      setDeckB(updated);
+      setDeckBText(generateDeckText(updated));
+    }
+  };
   const [deckAText, setDeckAText] = useState("");
   const [deckBText, setDeckBText] = useState("");
   const [deckA, setDeckA] = useState(new Map());
@@ -1376,6 +1501,7 @@ export default function App() {
               selectedForMerge={selectedForMerge}
               onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
               addCardToDeck={addCardToDeck}
+              removeCardFromDeck={removeCardFromDeck}
               deckB={deckB}
             />
           </section>
@@ -1393,6 +1519,7 @@ export default function App() {
                 selectedForMerge={selectedForMerge}
                 onCardClick={showMerge ? handleToggleSelectForMerge : undefined}
                 addCardToDeck={addCardToDeck}
+                removeCardFromDeck={removeCardFromDeck}
                 deckB={deckB}
               />
             </section>
