@@ -1,3 +1,9 @@
+// --- Chart.js and react-chartjs-2 imports ---
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
+
+import React, { useMemo, useState, useEffect, useRef } from "react";
 // --- Merge Deck helpers ----------------------------------------------------
 const MERGE_CHOICES_KEY = "mtg_deck_diff_merge_choices_v1";
 const loadMergeChoices = () => {
@@ -62,7 +68,302 @@ const downloadMergedDeck = (deckRows) => {
     URL.revokeObjectURL(url);
   }, 100);
 };
-import React, { useMemo, useState, useEffect, useRef } from "react";
+// --- CardSearchPanel: left sidebar with card search and add to deck ---
+function CardSearchPanel({ onAddCard, getCard }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    let ignore = false;
+    if (!query || query.length < 2) {
+      setResults([]);
+      setError("");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    fetch(
+      `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&order=released&unique=cards`
+    )
+      .then((r) => r.json())
+      .then((json) => {
+        if (ignore) return;
+        if (json.object === "error") {
+          setError(json.details || "No results");
+          setResults([]);
+        } else {
+          setResults(json.data?.slice(0, 5) || []);
+          setError("");
+        }
+        setLoading(false);
+      })
+      .catch((e) => {
+        if (ignore) return;
+        setError("Search failed");
+        setLoading(false);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [query]);
+
+  const handleAdd = (card, deck) => {
+    onAddCard(card, deck);
+    setQuery("");
+    setResults([]);
+    setError("");
+    if (inputRef.current) inputRef.current.blur();
+  };
+
+  return (
+    <aside className="fixed left-0 top-0 z-30 h-full w-72 bg-slate-900 border-r border-white/10 shadow-lg flex flex-col p-4">
+      <div className="mb-4 text-lg font-bold tracking-wide">Card Search</div>
+      <input
+        ref={inputRef}
+        className="w-full rounded-lg bg-slate-800 p-2 mb-2 text-sm text-white ring-1 ring-white/10 focus:outline-none"
+        placeholder="Search Scryfall (min 2 chars)"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      {loading && <div className="text-xs text-gray-300 mb-2">Searching…</div>}
+      {error && <div className="text-xs text-red-400 mb-2">{error}</div>}
+      <div className="flex-1 overflow-y-auto">
+        {results.map((c) => {
+          const norm = getCard ? getCard(c.name) : null;
+          return (
+            <div key={c.id} className="mb-3 rounded-lg bg-black/30 p-2 flex items-center gap-2">
+              <img
+                src={norm?.small || c.image_uris?.small || c.card_faces?.[0]?.image_uris?.small}
+                alt={c.name}
+                className="h-12 w-9 rounded-md object-cover ring-1 ring-white/10"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="truncate font-semibold text-sm">{c.name}</div>
+                <div className="truncate text-xs opacity-80">{c.type_line}</div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <button
+                  className="rounded bg-red-700 hover:bg-red-600 px-2 py-1 text-xs text-white"
+                  onClick={() => handleAdd(c, "A")}
+                  title="Add to Deck A"
+                >
+                  A
+                </button>
+                <button
+                  className="rounded bg-green-700 hover:bg-green-600 px-2 py-1 text-xs text-white"
+                  onClick={() => handleAdd(c, "B")}
+                  title="Add to Deck B"
+                >
+                  B
+                </button>
+                <button
+                  className="rounded bg-blue-700 hover:bg-blue-600 px-2 py-1 text-xs text-white"
+                  onClick={() => handleAdd(c, "C")}
+                  title="Add to Merged Deck"
+                >
+                  C
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-auto pt-4 text-xs text-gray-400 opacity-70">
+        Powered by Scryfall search.
+      </div>
+    </aside>
+  );
+}
+
+// --- ManaCurvePanel: right sidebar with mana curve bar chart ---
+function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
+  // Helper: get mana value (CMC) from card object
+  const getManaValue = (card) => {
+    if (!card) return null;
+    // Try to get from card data, fallback to parsing mana_cost
+    if (typeof card.cmc === "number") return card.cmc;
+    if (card.mana_cost) {
+      // crude parse: count digits and X
+      const tokens = card.mana_cost.match(/\{[^}]+\}/g) || [];
+      let total = 0;
+      tokens.forEach((tok) => {
+        const inner = tok.replace(/[{}]/g, "").toUpperCase();
+        if (/^\d+$/.test(inner)) total += parseInt(inner, 10);
+        else if (inner === "X") total += 0;
+        else total += 1;
+      });
+      return total;
+    }
+    return null;
+  };
+
+  // Helper: get color identity from card object
+  const getColors = (card) => card?.color_identity || card?.colors || [];
+
+  // Compute mana curve and color dist for each deck
+  const computeStats = (deckMap) => {
+    const curve = {};
+    const colorDist = {};
+    for (const [name, qty] of deckMap.entries()) {
+      const card = getCard(name);
+      const cmc = getManaValue(card);
+      const colors = getColors(card);
+      const key = cmc != null ? Math.min(Math.max(Math.round(cmc), 0), 7) : 0;
+      curve[key] = (curve[key] || 0) + qty;
+      // Color dist: count per color symbol
+      if (colors && colors.length) {
+        colors.forEach((col) => {
+          colorDist[col] = (colorDist[col] || 0) + qty;
+        });
+      } else {
+        colorDist["C"] = (colorDist["C"] || 0) + qty;
+      }
+    }
+    return { curve, colorDist };
+  };
+
+  // Convert mergedDeckRows to Map for stats
+  const mergedMap = useMemo(() => {
+    if (!mergedDeck) return new Map();
+    const m = new Map();
+    mergedDeck.forEach((row) => {
+      m.set(row.name, row.qty);
+    });
+    return m;
+  }, [mergedDeck]);
+
+  // Individual stats for each deck
+  const statsA = useMemo(() => computeStats(deckA), [deckA, getCard]);
+  const statsB = useMemo(() => computeStats(deckB), [deckB, getCard]);
+  const statsC = useMemo(() => computeStats(mergedMap), [mergedMap, getCard]);
+
+  // Prepare chart data for each deck
+  const labels = ["0", "1", "2", "3", "4", "5", "6", "7+"];
+  const getCurveArr = (curve) => labels.map((l, i) =>
+    i < 7 ? (curve[i] || 0) : (curve[7] || 0)
+  );
+  const dataA = {
+    labels,
+    datasets: [
+      {
+        label: "Deck A",
+        data: getCurveArr(statsA.curve),
+        backgroundColor: "rgba(220,38,38,0.7)",
+      },
+    ],
+  };
+  const dataB = {
+    labels,
+    datasets: [
+      {
+        label: "Deck B",
+        data: getCurveArr(statsB.curve),
+        backgroundColor: "rgba(16,185,129,0.7)",
+      },
+    ],
+  };
+  const dataC = {
+    labels,
+    datasets: [
+      {
+        label: "Merged",
+        data: getCurveArr(statsC.curve),
+        backgroundColor: "rgba(59,130,246,0.7)",
+      },
+    ],
+  };
+
+  // Color symbol mapping for legend
+  const colorMap = {
+    W: "#f9e79f", U: "#85c1e9", B: "#566573", R: "#e74c3c", G: "#27ae60", C: "#aaa",
+  };
+
+  // Hover state for color dist: 0 = A, 1 = B, 2 = C
+  const [hovered, setHovered] = useState(null); // 0, 1, 2 or null
+  let colorDist = null;
+  if (hovered === 0) colorDist = statsA.colorDist;
+  else if (hovered === 1) colorDist = statsB.colorDist;
+  else if (hovered === 2) colorDist = statsC.colorDist;
+
+  // Chart options (common)
+  const chartOptions = (deckIndex) => ({
+    responsive: true,
+    plugins: {
+      legend: {
+        display: false,
+      },
+      title: { display: false },
+      tooltip: {
+        callbacks: {
+          label: function (ctx) {
+            return `${ctx.dataset.label}: ${ctx.parsed.y}`;
+          },
+        },
+      },
+    },
+    scales: {
+      x: { ticks: { color: "#ccc" }, grid: { color: "#333" } },
+      y: { ticks: { color: "#ccc" }, grid: { color: "#333" }, beginAtZero: true },
+    },
+    onHover: (e, elements) => {
+      if (elements && elements.length > 0) setHovered(deckIndex);
+      else setHovered(null);
+    },
+  });
+
+  return (
+    <aside className="fixed right-0 top-0 z-30 h-full w-80 bg-slate-900 border-l border-white/10 shadow-lg flex flex-col p-4">
+      <div className="mb-4 text-lg font-bold tracking-wide">Mana Curve</div>
+      <div className="flex-1 space-y-6">
+        <div>
+          <div className="mb-2 text-xs font-semibold text-white/80">Deck A — CMC Curve</div>
+          <Bar
+            data={dataA}
+            options={chartOptions(0)}
+            height={120}
+          />
+        </div>
+        <div>
+          <div className="mb-2 text-xs font-semibold text-white/80">Deck B — CMC Curve</div>
+          <Bar
+            data={dataB}
+            options={chartOptions(1)}
+            height={120}
+          />
+        </div>
+        {showMerge && (
+          <div>
+            <div className="mb-2 text-xs font-semibold text-white/80">Merged Deck — CMC Curve</div>
+            <Bar
+              data={dataC}
+              options={chartOptions(2)}
+              height={120}
+            />
+          </div>
+        )}
+      </div>
+      {hovered != null && colorDist && (
+        <div className="mt-4">
+          <div className="text-xs font-semibold mb-1">Color Distribution</div>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(colorDist).map(([col, count]) => (
+              <span
+                key={col}
+                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-semibold"
+                style={{ background: colorMap[col] || "#aaa", color: "#222" }}
+              >
+                {col} <span className="font-mono">{count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </aside>
+  );
+}
 
 // --- Utilities --------------------------------------------------------------
 // Normalize multi-face separators and spacing for card names
@@ -699,9 +1000,77 @@ export default function App() {
     }));
   };
 
+  // --- Handler for CardSearchPanel add ---
+  const handleAddCard = (cardObj, deck) => {
+    // cardObj: Scryfall card object
+    const name = cardObj.name;
+    if (deck === "A") {
+      setDeckAText((prev) => {
+        // Try to find line for this card, if so, bump qty, else add
+        const lines = prev.split(/\r?\n/);
+        let found = false;
+        const nextLines = lines.map((line) => {
+          const m = line.match(/^(\d+)x?\s+(.+)$/i);
+          if (m && normalizeName(m[2]) === normalizeName(name)) {
+            found = true;
+            return `${parseInt(m[1], 10) + 1} ${name}`;
+          }
+          return line;
+        });
+        if (!found) nextLines.push(`1 ${name}`);
+        return nextLines.filter((l) => l.trim().length > 0).join("\n");
+      });
+    } else if (deck === "B") {
+      setDeckBText((prev) => {
+        const lines = prev.split(/\r?\n/);
+        let found = false;
+        const nextLines = lines.map((line) => {
+          const m = line.match(/^(\d+)x?\s+(.+)$/i);
+          if (m && normalizeName(m[2]) === normalizeName(name)) {
+            found = true;
+            return `${parseInt(m[1], 10) + 1} ${name}`;
+          }
+          return line;
+        });
+        if (!found) nextLines.push(`1 ${name}`);
+        return nextLines.filter((l) => l.trim().length > 0).join("\n");
+      });
+    } else if (deck === "C") {
+      // Add to merged deck: add to both A and B, or just to merged state?
+      // We'll add to both for simplicity (if not present), or bump in A.
+      setDeckAText((prev) => {
+        const lines = prev.split(/\r?\n/);
+        let found = false;
+        const nextLines = lines.map((line) => {
+          const m = line.match(/^(\d+)x?\s+(.+)$/i);
+          if (m && normalizeName(m[2]) === normalizeName(name)) {
+            found = true;
+            return `${parseInt(m[1], 10) + 1} ${name}`;
+          }
+          return line;
+        });
+        if (!found) nextLines.push(`1 ${name}`);
+        return nextLines.filter((l) => l.trim().length > 0).join("\n");
+      });
+    }
+  };
+
+  // Only show merge toggle if both decks are loaded (non-empty)
+  const canShowMerge = deckA.size > 0 && deckB.size > 0;
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-950 text-white">
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/80 backdrop-blur">
+      {/* Left: CardSearchPanel */}
+      <CardSearchPanel onAddCard={handleAddCard} getCard={get} />
+      {/* Right: ManaCurvePanel */}
+      <ManaCurvePanel
+        deckA={deckA}
+        deckB={deckB}
+        mergedDeck={mergedDeckRows}
+        getCard={get}
+        showMerge={showMerge}
+      />
+      <header className="sticky top-0 z-40 border-b border-white/10 bg-slate-950/80 backdrop-blur ml-72 mr-80">
         <div className="mx-auto max-w-7xl px-4 py-3">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-bold tracking-wide">MTG Deck Diff</h1>
@@ -712,7 +1081,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+      <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 ml-72 mr-80">
         {/* Inputs */}
         <div className="grid gap-4 md:grid-cols-2">
           <FileOrPaste
@@ -749,23 +1118,25 @@ export default function App() {
             <div className="text-xs uppercase opacity-80">Different Quantity</div>
             <div className="text-xl font-bold">{diffs}</div>
           </div>
-          <div className="rounded-xl border border-white/10 bg-blue-800 p-3 text-center cursor-pointer select-none"
-            role="button"
-            tabIndex={0}
-            aria-pressed={showMerge}
-            onClick={() => setShowMerge((v) => !v)}
-            onKeyDown={(e) => {
-              if (e.key === " " || e.key === "Enter") setShowMerge((v) => !v);
-            }}
-          >
-            <div className="text-xs uppercase opacity-80 flex items-center justify-center gap-1">
-              <svg className="inline h-4 w-4 text-blue-200" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10M7 12h10M7 17h6" />
-              </svg>
-              Merge
+          {canShowMerge && (
+            <div className="rounded-xl border border-white/10 bg-blue-800 p-3 text-center cursor-pointer select-none"
+              role="button"
+              tabIndex={0}
+              aria-pressed={showMerge}
+              onClick={() => setShowMerge((v) => !v)}
+              onKeyDown={(e) => {
+                if (e.key === " " || e.key === "Enter") setShowMerge((v) => !v);
+              }}
+            >
+              <div className="text-xs uppercase opacity-80 flex items-center justify-center gap-1">
+                <svg className="inline h-4 w-4 text-blue-200" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h10M7 12h10M7 17h6" />
+                </svg>
+                Merge
+              </div>
+              <div className="text-xl font-bold">{showMerge ? "On" : "Off"}</div>
             </div>
-            <div className="text-xl font-bold">{showMerge ? "On" : "Off"}</div>
-          </div>
+          )}
         </div>
 
         {/* Columns */}
