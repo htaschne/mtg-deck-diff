@@ -208,25 +208,21 @@ function CardSearchPanel({ onAddCard, getCard }) {
                   C
                 </button>
               </div>
-              {/* Desktop large preview */}
-              {previewCard.png && (
-                <div className="pointer-events-none absolute top-0 left-full ml-3 z-40 hidden md:group-hover:block">
-                  <div className="rounded-xl border border-white/20 bg-black/80 p-2 shadow-2xl">
+              {/* Desktop large preview - for search results, show below the card */}
+              {hoveredCard?.id === c.id && previewCard.png && (
+                <div className="absolute z-50 top-full left-0 mt-2 w-[250px] hidden md:block">
+                  <img
+                    src={previewCard.png}
+                    alt={previewCard.name}
+                    className="rounded-lg shadow-2xl border border-gray-300 w-full object-cover"
+                  />
+                  {previewCard.back_png && (
                     <img
-                      src={previewCard.png}
-                      alt={previewCard.name}
-                      className="h-80 rounded-lg object-cover border border-white/10 shadow-lg"
-                      style={{ maxWidth: "250px" }}
+                      src={previewCard.back_png}
+                      alt={previewCard.name + ' (back)'}
+                      className="rounded-lg shadow-2xl border border-gray-300 w-full object-cover mt-2"
                     />
-                    {previewCard.back_png && (
-                      <img
-                        src={previewCard.back_png}
-                        alt={previewCard.name + " (back)"}
-                        className="h-80 rounded-lg object-cover border border-white/10 shadow-lg mt-2"
-                        style={{ maxWidth: "250px" }}
-                      />
-                    )}
-                  </div>
+                  )}
                 </div>
               )}
             </div>
