@@ -988,7 +988,15 @@ const DeckColumn = ({
     if (cardStr) {
       try {
         const card = JSON.parse(cardStr);
-        addCardToDeck(side, card);
+        // Allow dropping into deck A if both decks are empty
+        if (deckMap.size === 0 && side === 'A') {
+          addCardToDeck('A', card);
+        } else if (deckMap.size === 0 && side === 'B') {
+          // if deck B column is shown but empty, add to A by default
+          addCardToDeck('A', card);
+        } else {
+          addCardToDeck(side, card);
+        }
       } catch { }
     }
   };
@@ -1000,130 +1008,140 @@ const DeckColumn = ({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
-      {names.map((name) => {
-        // When showMerge is true, hide cards present in both A and B, and hide those selected for merge
-        if (showMerge) {
-          if (eligibleForMerge(name) && !selectedForMerge[name]) {
-            // Eligible and not selected: show with highlight
-            // (handled below)
-          } else if (selectedForMerge[name]) {
-            // Selected for merge: hide from A/B columns
-            return null;
-          } else if (eligibleForMerge(name)) {
-            // Defensive: already handled above
-          } else if (otherDeckMap.has(name) && deckMap.has(name)) {
-            // Present in both decks but not eligible for merge: hide
-            return null;
+      {deckMap.size === 0 ? (
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => handleDrop(e)}
+          className="flex items-center justify-center h-32 w-full border-2 border-dashed border-gray-500 text-gray-400 italic rounded-lg"
+        >
+          Drop cards here
+        </div>
+      ) : (
+        Array.from(deckMap.entries()).map(([name, card]) => {
+          // When showMerge is true, hide cards present in both A and B, and hide those selected for merge
+          if (showMerge) {
+            if (eligibleForMerge(name) && !selectedForMerge[name]) {
+              // Eligible and not selected: show with highlight
+              // (handled below)
+            } else if (selectedForMerge[name]) {
+              // Selected for merge: hide from A/B columns
+              return null;
+            } else if (eligibleForMerge(name)) {
+              // Defensive: already handled above
+            } else if (otherDeckMap.has(name) && deckMap.has(name)) {
+              // Present in both decks but not eligible for merge: hide
+              return null;
+            }
           }
-        }
-        // Visual highlight for eligible-for-merge cards
-        const isEligible = showMerge && eligibleForMerge(name) && !selectedForMerge[name];
-        // Only apply opacity overlay if deckB is loaded
-        const rowOpacity = (deckB && deckB.size > 0 && showMerge && eligibleForMerge(name) && selectedForMerge[name])
-          ? "opacity-40 pointer-events-none"
-          : "";
-        // Live quantity and cardData for this card
-        const cardData = deckMap.get(name);
-        const quantity = cardData?.quantity ?? deckMap.get(name)?.quantity ?? deckMap.get(name) ?? 0;
-        // Use getCard for card info
-        const card = getCard(name);
-        // Determine background color for card row
-        const qa = side === "A" ? deckMap.get(name) : otherDeckMap.get(name);
-        const qb = side === "B" ? deckMap.get(name) : otherDeckMap.get(name);
-        const inBothSameQty = qa && qb && qa === qb;
-        const onlyInB = !qa && qb;
-        const onlyInA = qa && !qb;
-        const diffQty = qa && qb && qa !== qb;
-        const bgColor =
-          inBothSameQty ? "bg-gray-700" :
-            onlyInB ? "bg-green-700" :
-              (deckB && deckB.size > 0 && onlyInA) ? "bg-red-700" :
-                diffQty ? "bg-yellow-700" : "bg-gray-800";
-        return (
-          <div
-            key={`${side}-${name}`}
-            className={isEligible ? "ring-2 ring-blue-400 rounded-xl" : ""}
-            style={rowOpacity ? { opacity: 0.4, pointerEvents: "none" } : undefined}
-            onClick={isEligible && onCardClick ? () => onCardClick(name) : undefined}
-          >
-            {/* Card container with live quantity and handlers */}
+          // Visual highlight for eligible-for-merge cards
+          const isEligible = showMerge && eligibleForMerge(name) && !selectedForMerge[name];
+          // Only apply opacity overlay if deckB is loaded
+          const rowOpacity = (deckB && deckB.size > 0 && showMerge && eligibleForMerge(name) && selectedForMerge[name])
+            ? "opacity-40 pointer-events-none"
+            : "";
+          // Live quantity and cardData for this card
+          const cardData = deckMap.get(name);
+          const quantity = cardData?.quantity ?? deckMap.get(name)?.quantity ?? deckMap.get(name) ?? 0;
+          // Use getCard for card info
+          const cardObj = getCard(name);
+          // Determine background color for card row
+          const qa = side === "A" ? deckMap.get(name) : otherDeckMap.get(name);
+          const qb = side === "B" ? deckMap.get(name) : otherDeckMap.get(name);
+          const inBothSameQty = qa && qb && qa === qb;
+          const onlyInB = !qa && qb;
+          const onlyInA = qa && !qb;
+          const diffQty = qa && qb && qa !== qb;
+          const bgColor =
+            inBothSameQty ? "bg-gray-700" :
+              onlyInB ? "bg-green-700" :
+                (deckB && deckB.size > 0 && onlyInA) ? "bg-red-700" :
+                  diffQty ? "bg-yellow-700" : "bg-gray-800";
+          return (
             <div
-              onClick={(e) => { e.preventDefault(); addCardToDeck && addCardToDeck(side, { name, quantity: 1 }); }}
-              onContextMenu={(e) => { e.preventDefault(); removeCardFromDeck && removeCardFromDeck(side, name); }}
-              className={`group relative rounded-xl shadow-sm ${bgColor}`}
-              onMouseEnter={() => setHovered(name)}
-              onMouseLeave={() => setHovered(null)}
-              role="listitem"
-              style={{ cursor: "pointer" }}
+              key={`${side}-${name}`}
+              className={isEligible ? "ring-2 ring-blue-400 rounded-xl" : ""}
+              style={rowOpacity ? { opacity: 0.4, pointerEvents: "none" } : undefined}
+              onClick={isEligible && onCardClick ? () => onCardClick(name) : undefined}
             >
-              <div className={`relative overflow-hidden rounded-xl border border-white/10 ${bgColor}`}>
-                {/* Background art */}
-                {card?.art && (
-                  <div
-                    className="absolute inset-0 opacity-30 bg-cover bg-center"
-                    style={{ backgroundImage: `url(${card.art})` }}
-                    aria-hidden
-                  />
-                )}
-                {/* Scrim */}
-                <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-black/30" aria-hidden />
-                {/* Content */}
-                <div className="relative z-10 flex items-center gap-3 p-2">
-                  {/* Thumbnail */}
-                  {card?.small ? (
-                    <img
-                      src={card.small}
-                      alt={name}
-                      className="h-12 w-9 rounded-md object-cover ring-1 ring-white/10"
+              {/* Card container with live quantity and handlers */}
+              <div
+                onClick={(e) => { e.preventDefault(); addCardToDeck && addCardToDeck(side, { name, quantity: 1 }); }}
+                onContextMenu={(e) => { e.preventDefault(); removeCardFromDeck && removeCardFromDeck(side, name); }}
+                className={`group relative rounded-xl shadow-sm ${bgColor}`}
+                onMouseEnter={() => setHovered(name)}
+                onMouseLeave={() => setHovered(null)}
+                role="listitem"
+                style={{ cursor: "pointer" }}
+              >
+                <div className={`relative overflow-hidden rounded-xl border border-white/10 ${bgColor}`}>
+                  {/* Background art */}
+                  {cardObj?.art && (
+                    <div
+                      className="absolute inset-0 opacity-30 bg-cover bg-center"
+                      style={{ backgroundImage: `url(${cardObj.art})` }}
+                      aria-hidden
                     />
-                  ) : (
-                    <div className="h-12 w-9 rounded-md bg-black/30 ring-1 ring-white/10 flex items-center justify-center text-[10px] leading-tight text-white/60">
-                      N/A
-                    </div>
                   )}
-                  {/* Quantity + Header */}
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <div className="truncate text-sm font-semibold tracking-wide">
-                        <span className="mr-2 opacity-90">{deckMap.get(name)?.quantity ?? deckMap.get(name) ?? 0}×</span>
-                        <span title={name}>{name}</span>
+                  {/* Scrim */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/50 to-black/30" aria-hidden />
+                  {/* Content */}
+                  <div className="relative z-10 flex items-center gap-3 p-2">
+                    {/* Thumbnail */}
+                    {cardObj?.small ? (
+                      <img
+                        src={cardObj.small}
+                        alt={name}
+                        className="h-12 w-9 rounded-md object-cover ring-1 ring-white/10"
+                      />
+                    ) : (
+                      <div className="h-12 w-9 rounded-md bg-black/30 ring-1 ring-white/10 flex items-center justify-center text-[10px] leading-tight text-white/60">
+                        N/A
                       </div>
-                      <div className="ml-2 flex items-center">
-                        {/* Mana cost string (rendered as mana symbols) */}
-                        {card?.mana_cost && (
-                          <ManaCost cost={card.mana_cost} />
-                        )}
-                        <DiffBadge qa={qa} qb={qb} side={side} />
+                    )}
+                    {/* Quantity + Header */}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <div className="truncate text-sm font-semibold tracking-wide">
+                          <span className="mr-2 opacity-90">{deckMap.get(name)?.quantity ?? deckMap.get(name) ?? 0}×</span>
+                          <span title={name}>{name}</span>
+                        </div>
+                        <div className="ml-2 flex items-center">
+                          {/* Mana cost string (rendered as mana symbols) */}
+                          {cardObj?.mana_cost && (
+                            <ManaCost cost={cardObj.mana_cost} />
+                          )}
+                          <DiffBadge qa={qa} qb={qb} side={side} />
+                        </div>
                       </div>
+                      {/* Type line */}
+                      {cardObj?.type_line && (
+                        <div className="truncate text-xs opacity-80">{cardObj.type_line}</div>
+                      )}
                     </div>
-                    {/* Type line */}
-                    {card?.type_line && (
-                      <div className="truncate text-xs opacity-80">{card.type_line}</div>
+                    {/* Tap to open modal on mobile */}
+                    {cardObj?.png && (
+                      <button
+                        className="md:hidden ml-2 rounded-lg bg-black/30 px-2 py-1 text-xs ring-1 ring-white/10"
+                        onClick={e => { e.stopPropagation(); }}
+                      >
+                        Preview
+                      </button>
                     )}
                   </div>
-                  {/* Tap to open modal on mobile */}
-                  {card?.png && (
-                    <button
-                      className="md:hidden ml-2 rounded-lg bg-black/30 px-2 py-1 text-xs ring-1 ring-white/10"
-                      onClick={e => { e.stopPropagation(); }}
-                    >
-                      Preview
-                    </button>
+                  {/* Hover preview image (desktop) */}
+                  {hovered === name && (
+                    <img
+                      src={cardObj?.image_uris?.normal || cardObj?.png}
+                      alt={name}
+                      className="absolute top-full left-0 mt-2 w-[250px] rounded-lg shadow-2xl border border-gray-300"
+                    />
                   )}
                 </div>
-                {/* Hover preview image (desktop) */}
-                {hovered === name && (
-                  <img
-                    src={card?.image_uris?.normal || card?.png}
-                    alt={name}
-                    className="absolute top-full left-0 mt-2 w-[250px] rounded-lg shadow-2xl border border-gray-300"
-                  />
-                )}
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+      )}
     </div>
   );
 };
