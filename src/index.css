@@ -3,8 +3,16 @@
 /* Tell Tailwind v4 where to scan for classes */
 @source "./index.html" "./src/**/*.{js,jsx,ts,tsx}";
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 html,
 body,
 #root {
     height: 100%;
+}
+
+body {
+    @apply bg-[#0a192f] text-white;
 }
