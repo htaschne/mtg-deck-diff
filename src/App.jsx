@@ -131,131 +131,146 @@ function CardSearchPanel({ onAddCard, getCard }) {
   const closeMobilePreview = () => setMobilePreviewCard(null);
 
   return (
-    <aside className="fixed left-0 top-0 z-30 h-full w-72 bg-slate-900 border-r border-white/10 shadow-lg flex flex-col p-4">
-      <div className="mb-4 text-lg font-bold tracking-wide">Card Search</div>
-      <input
-        ref={inputRef}
-        className="w-full rounded-lg bg-slate-800 p-2 mb-2 text-sm text-white ring-1 ring-white/10 focus:outline-none"
-        placeholder="Search Scryfall (min 2 chars)"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      {loading && <div className="text-xs text-gray-300 mb-2">Searching…</div>}
-      {error && <div className="text-xs text-red-400 mb-2">{error}</div>}
-      <div className="flex-1 overflow-y-auto relative">
-        {results.map((c) => {
-          const norm = getNormCard(c) || c;
-          // For preview, prefer normalized card image URLs
-          const previewCard = {
-            ...c,
-            ...norm,
-            png: norm?.png || c.image_uris?.png || c.card_faces?.[0]?.image_uris?.png,
-            back_png: norm?.back_png || c.card_faces?.[1]?.image_uris?.png,
-            name: c.name,
-          };
-          return (
-            <div
-              key={c.id}
-              className="mb-3 rounded-lg bg-black/30 p-2 flex items-center gap-2 relative group"
-              onMouseEnter={() => setHoveredCard(previewCard)}
-              onMouseLeave={() => setHoveredCard((h) => (h?.id === c.id ? null : h))}
-              draggable
-              onDragStart={e => {
-                e.dataTransfer.setData('card', JSON.stringify(previewCard));
-              }}
-              // Mobile tap: show preview
-              onClick={e => {
-                // Only show on mobile (hide on md+)
-                if (window.innerWidth < 768) {
-                  handlePreviewMobile(previewCard);
-                }
-              }}
-              tabIndex={0}
-              style={{ cursor: "grab" }}
-            >
-              <img
-                src={norm?.small || c.image_uris?.small || c.card_faces?.[0]?.image_uris?.small}
-                alt={c.name}
-                className="h-12 w-9 rounded-md object-cover ring-1 ring-white/10"
-              />
-              <div className="flex-1 min-w-0">
-                <div className="truncate font-semibold text-sm">{c.name}</div>
-                <div className="truncate text-xs opacity-80">{c.type_line}</div>
-              </div>
-              <div className="flex flex-col gap-1">
-                <button
-                  className="rounded bg-red-700 hover:bg-red-600 px-2 py-1 text-xs text-white"
-                  onClick={e => { e.stopPropagation(); handleAdd(c, "A"); }}
-                  title="Add to Deck A"
-                  tabIndex={-1}
+    <aside className="fixed left-0 top-0 z-30 h-full w-72 bg-slate-900 border-r border-white/10 shadow-lg flex flex-col p-4 h-full">
+      <div className="flex flex-col h-full">
+        <div className="flex-1 overflow-y-auto">
+          <div className="mb-4 text-lg font-bold tracking-wide">Card Search</div>
+          <input
+            ref={inputRef}
+            className="w-full rounded-lg bg-slate-800 p-2 mb-2 text-sm text-white ring-1 ring-white/10 focus:outline-none"
+            placeholder="Search Scryfall (min 2 chars)"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {loading && <div className="text-xs text-gray-300 mb-2">Searching…</div>}
+          {error && <div className="text-xs text-red-400 mb-2">{error}</div>}
+          <div className="relative">
+            {results.map((c) => {
+              const norm = getNormCard(c) || c;
+              // For preview, prefer normalized card image URLs
+              const previewCard = {
+                ...c,
+                ...norm,
+                png: norm?.png || c.image_uris?.png || c.card_faces?.[0]?.image_uris?.png,
+                back_png: norm?.back_png || c.card_faces?.[1]?.image_uris?.png,
+                name: c.name,
+              };
+              return (
+                <div
+                  key={c.id}
+                  className="mb-3 rounded-lg bg-black/30 p-2 flex items-center gap-2 relative group"
+                  onMouseEnter={() => setHoveredCard(previewCard)}
+                  onMouseLeave={() => setHoveredCard((h) => (h?.id === c.id ? null : h))}
+                  draggable
+                  onDragStart={e => {
+                    e.dataTransfer.setData('card', JSON.stringify(previewCard));
+                  }}
+                  // Mobile tap: show preview
+                  onClick={e => {
+                    // Only show on mobile (hide on md+)
+                    if (window.innerWidth < 768) {
+                      handlePreviewMobile(previewCard);
+                    }
+                  }}
+                  tabIndex={0}
+                  style={{ cursor: "grab" }}
                 >
-                  A
-                </button>
-                <button
-                  className="rounded bg-green-700 hover:bg-green-600 px-2 py-1 text-xs text-white"
-                  onClick={e => { e.stopPropagation(); handleAdd(c, "B"); }}
-                  title="Add to Deck B"
-                  tabIndex={-1}
-                >
-                  B
-                </button>
-                <button
-                  className="rounded bg-blue-700 hover:bg-blue-600 px-2 py-1 text-xs text-white"
-                  onClick={e => { e.stopPropagation(); handleAdd(c, "C"); }}
-                  title="Add to Merged Deck"
-                  tabIndex={-1}
-                >
-                  C
-                </button>
-              </div>
-              {/* Desktop large preview - for search results, show below the card */}
-              {hoveredCard?.id === c.id && previewCard.png && (
-                <div className="absolute z-50 top-full left-0 mt-2 w-[250px] hidden md:block">
                   <img
-                    src={previewCard.png}
-                    alt={previewCard.name}
-                    className="rounded-lg shadow-2xl border border-gray-300 w-full object-cover"
+                    src={norm?.small || c.image_uris?.small || c.card_faces?.[0]?.image_uris?.small}
+                    alt={c.name}
+                    className="h-12 w-9 rounded-md object-cover ring-1 ring-white/10"
                   />
-                  {previewCard.back_png && (
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate font-semibold text-sm">{c.name}</div>
+                    <div className="truncate text-xs opacity-80">{c.type_line}</div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      className="rounded bg-red-700 hover:bg-red-600 px-2 py-1 text-xs text-white"
+                      onClick={e => { e.stopPropagation(); handleAdd(c, "A"); }}
+                      title="Add to Deck A"
+                      tabIndex={-1}
+                    >
+                      A
+                    </button>
+                    <button
+                      className="rounded bg-green-700 hover:bg-green-600 px-2 py-1 text-xs text-white"
+                      onClick={e => { e.stopPropagation(); handleAdd(c, "B"); }}
+                      title="Add to Deck B"
+                      tabIndex={-1}
+                    >
+                      B
+                    </button>
+                    <button
+                      className="rounded bg-blue-700 hover:bg-blue-600 px-2 py-1 text-xs text-white"
+                      onClick={e => { e.stopPropagation(); handleAdd(c, "C"); }}
+                      title="Add to Merged Deck"
+                      tabIndex={-1}
+                    >
+                      C
+                    </button>
+                  </div>
+                  {/* Desktop large preview - for search results, show below the card */}
+                  {hoveredCard?.id === c.id && previewCard.png && (
+                    <div className="absolute z-50 top-full left-0 mt-2 w-[250px] hidden md:block">
+                      <img
+                        src={previewCard.png}
+                        alt={previewCard.name}
+                        className="rounded-lg shadow-2xl border border-gray-300 w-full object-cover"
+                      />
+                      {previewCard.back_png && (
+                        <img
+                          src={previewCard.back_png}
+                          alt={previewCard.name + ' (back)'}
+                          className="rounded-lg shadow-2xl border border-gray-300 w-full object-cover mt-2"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {/* Mobile preview modal */}
+            {mobilePreviewCard && mobilePreviewCard.png && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                onClick={closeMobilePreview}
+                style={{ cursor: "pointer" }}
+              >
+                <div>
+                  <img
+                    src={mobilePreviewCard.png}
+                    alt={mobilePreviewCard.name}
+                    className="max-h-full rounded-xl shadow-2xl border border-white/20"
+                    style={{ maxWidth: "90vw", maxHeight: "80vh" }}
+                  />
+                  {mobilePreviewCard.back_png && (
                     <img
-                      src={previewCard.back_png}
-                      alt={previewCard.name + ' (back)'}
-                      className="rounded-lg shadow-2xl border border-gray-300 w-full object-cover mt-2"
+                      src={mobilePreviewCard.back_png}
+                      alt={mobilePreviewCard.name + " (back)"}
+                      className="max-h-full rounded-xl shadow-2xl border border-white/20 mt-2"
+                      style={{ maxWidth: "90vw", maxHeight: "80vh" }}
                     />
                   )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-        {/* Mobile preview modal */}
-        {mobilePreviewCard && mobilePreviewCard.png && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
-            onClick={closeMobilePreview}
-            style={{ cursor: "pointer" }}
-          >
-            <div>
-              <img
-                src={mobilePreviewCard.png}
-                alt={mobilePreviewCard.name}
-                className="max-h-full rounded-xl shadow-2xl border border-white/20"
-                style={{ maxWidth: "90vw", maxHeight: "80vh" }}
-              />
-              {mobilePreviewCard.back_png && (
-                <img
-                  src={mobilePreviewCard.back_png}
-                  alt={mobilePreviewCard.name + " (back)"}
-                  className="max-h-full rounded-xl shadow-2xl border border-white/20 mt-2"
-                  style={{ maxWidth: "90vw", maxHeight: "80vh" }}
-                />
-              )}
-            </div>
+              </div>
+            )}
           </div>
-        )}
-      </div>
-      <div className="mt-auto pt-4 text-xs text-gray-400 opacity-70">
-        Powered by Scryfall search.
+        </div>
+        <div className="mt-4 mb-2 text-xs text-gray-400 text-center opacity-70">
+          <p>
+            Card data and images from{' '}
+            <a href="https://scryfall.com/" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-300">
+              Scryfall
+            </a>
+          </p>
+          <p>
+            Built by{' '}
+            <a href="https://github.com/htaschne/mtg-deck-diff" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-300">
+              @htaschne
+            </a>
+          </p>
+        </div>
       </div>
     </aside>
   );
@@ -1647,23 +1662,7 @@ export default function App() {
           )}
         </div>
 
-        {/* Footer */}
-        <div className="mt-8 text-center text-xs opacity-60">
-          Built with Scryfall data. This product uses the Scryfall API but is not produced or endorsed by Scryfall.
-        </div>
-        <div className="mt-4 text-center text-xs">
-          <a
-            href="https://github.com/htaschne/mtg-deck-diff"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-sky-400 hover:text-sky-300 transition-colors"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-4 w-4">
-              <path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 17.07 3.633 16.7 3.633 16.7c-1.087-.744.084-.729.084-.729 1.205.084 1.84 1.236 1.84 1.236 1.07 1.834 2.807 1.304 3.492.997.108-.776.418-1.304.762-1.604-2.665-.304-5.466-1.334-5.466-5.931 0-1.31.468-2.382 1.236-3.221-.124-.303-.536-1.523.117-3.176 0 0 1.008-.322 3.301 1.23a11.48 11.48 0 0 1 3.003-.404c1.018.005 2.045.138 3.003.404 2.291-1.552 3.297-1.23 3.297-1.23.655 1.653.243 2.873.12 3.176.77.839 1.234 1.911 1.234 3.221 0 4.609-2.803 5.625-5.475 5.921.43.372.823 1.102.823 2.222 0 1.604-.015 2.896-.015 3.286 0 .321.216.694.825.576C20.565 22.092 24 17.592 24 12.297 24 5.67 18.627.297 12 .297z" />
-            </svg>
-            <span>Created by @htaschne</span>
-          </a>
-        </div>
+        {/* Footer removed, now in sidebar */}
       </main>
     </div>
   );
