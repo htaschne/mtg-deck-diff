@@ -281,8 +281,9 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
   // Color symbol mapping for legend
   const colorMap = {
     W: "#f9e79f", U: "#85c1e9", B: "#566573", R: "#e74c3c", G: "#27ae60", C: "#aaa",
+    Lands: "#ccc",
   };
-  // Color keys
+  // Color keys (excluding 'Lands' for now)
   const colorKeys = ["W", "U", "B", "R", "G", "C"];
 
   // Helper: get mana value (CMC) from card object
@@ -319,9 +320,19 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
       const cmc = getManaValue(card);
       const colors = getColors(card);
       // lands go into special "Lands" bucket, others by CMC
-      const key = isLand ? "Lands" : (cmc != null ? Math.min(Math.max(Math.round(cmc), 0), 7) : 0);
+      if (isLand) {
+        const key = "Lands";
+        curve[key] = (curve[key] || 0) + qty;
+        if (!colorByCmc[key]) colorByCmc[key] = {};
+        colorByCmc[key]["Lands"] = (colorByCmc[key]["Lands"] || 0) + qty;
+        // Do not count lands in colorDist or spell color distribution
+        continue;
+      }
+
+      const key = (cmc != null ? Math.min(Math.max(Math.round(cmc), 0), 7) : 0);
       curve[key] = (curve[key] || 0) + qty;
-      // Color dist: count per color symbol
+
+      // Color dist: count per color symbol for non-land cards
       if (colors && colors.length) {
         colors.forEach((col) => {
           colorDist[col] = (colorDist[col] || 0) + qty;
@@ -329,7 +340,8 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
       } else {
         colorDist["C"] = (colorDist["C"] || 0) + qty;
       }
-      // Color by CMC or by "Lands"
+
+      // Color by CMC for non-land cards
       if (!colorByCmc[key]) colorByCmc[key] = {};
       if (colors && colors.length) {
         colors.forEach((col) => {
@@ -362,9 +374,41 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
   // The corresponding keys in colorByCmc: "Lands", 0..6, 7
   const cmcKeys = ["Lands", 0, 1, 2, 3, 4, 5, 6, 7];
 
+  // --- BEGIN lands-aware logic ---
+  // Build deckData for merged stats to determine if there are lands
+  // Use mergedDeck or deckA/deckB as needed. For mergedDeck, build array of cards.
+  // We'll use mergedDeck for colorMap and allColors logic
+  const mergedDeckMap = mergedDeck
+    ? (() => {
+      const m = new Map();
+      mergedDeck.forEach((row) => {
+        m.set(row.name, row.qty);
+      });
+      return m;
+    })()
+    : new Map();
+  // For the merged deck, build deckData array for land detection
+  const deckData = Array.from(mergedDeckMap.entries()).map(([name, qty]) => {
+    const card = getCard(name);
+    return { ...card, qty };
+  });
+  // If mergedDeck is empty, fallback to deckA
+  const fallbackDeckMap = deckA;
+  const fallbackDeckData = Array.from(fallbackDeckMap.entries()).map(([name, qty]) => {
+    const card = getCard(name);
+    return { ...card, qty };
+  });
+  // Use deckData for merged, fallbackDeckData otherwise
+  const effectiveDeckData = deckData.length > 0 ? deckData : fallbackDeckData;
+  // --- lands check
+  const hasLands = effectiveDeckData.some(card => card.type_line?.includes('Land'));
+  // All colors for legend and datasets
+  const allColors = hasLands ? [...Object.keys(colorMap)] : Object.keys(colorMap).filter(c => c !== "Lands");
+
   // Generate stacked datasets per color for a deck stats/colorByCmc
   function makeStackedDatasets(stats, labelPrefix, stackKey) {
-    return colorKeys.map((color) => ({
+    // Use allColors for legend and datasets
+    return allColors.map((color) => ({
       label: color,
       data: cmcKeys.map((cmc) => stats.colorByCmc[cmc]?.[color] || 0),
       backgroundColor: colorMap[color],
@@ -419,15 +463,21 @@ function ManaCurvePanel({ deckA, deckB, mergedDeck, getCard, showMerge }) {
   function ColorDistributionBlock({ colorDist, stats }) {
     if (!colorDist) return null;
 
-    // Prepare colorDist as array, and add 'Lands' if not present
+    // Prepare colorDist as array, and add 'Lands' if not present and hasLands is true
     let distArr = Object.entries(colorDist);
-    let hasLands = distArr.some(([col]) => col === "Lands");
     let landsCount = 0;
     if (stats && stats.curve && typeof stats.curve["Lands"] === "number") {
       landsCount = stats.curve["Lands"];
     }
-    if (!hasLands) {
-      distArr.push(["Lands", landsCount]);
+    // Only include 'Lands' if there are any
+    if (hasLands) {
+      let landsInArr = distArr.some(([col]) => col === "Lands");
+      if (!landsInArr) {
+        distArr.push(["Lands", landsCount]);
+      }
+    } else {
+      // Remove any 'Lands' entry if present
+      distArr = distArr.filter(([col]) => col !== "Lands");
     }
 
     // Scryfall color symbol order
