@@ -1194,12 +1194,28 @@ const DeckColumn = ({
                     )}
                   </div>
                   {/* Hover preview image (desktop) */}
-                  {hovered === name && (
-                    <img
-                      src={cardObj?.image_uris?.normal || cardObj?.png}
-                      alt={name}
-                      className="absolute top-full left-0 mt-2 w-[250px] rounded-lg shadow-2xl border border-gray-300"
-                    />
+                  {hovered === name && cardObj?.png && (
+                    <div
+                      className="fixed z-50 pointer-events-none"
+                      style={{
+                        top: `${window.scrollY + 100}px`,
+                        left: 'calc(50% - 125px)',
+                        width: '250px'
+                      }}
+                    >
+                      <img
+                        src={cardObj.png}
+                        alt={name}
+                        className="rounded-lg shadow-2xl border border-gray-300 w-full object-cover"
+                      />
+                      {cardObj.back_png && (
+                        <img
+                          src={cardObj.back_png}
+                          alt={`${name} (back)`}
+                          className="rounded-lg shadow-2xl border border-gray-300 w-full object-cover mt-2"
+                        />
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
